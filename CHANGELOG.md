@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `testneo_execute_generated_test_case` / `testneo_run_generated_test_pipeline`: optional `environment_id` / `environment_name` for execution requests.
 - `testneo_run_generated_test_pipeline`: project trend fallback when execution payloads omit `project_id`.
 - Mirror scripts: usage text uses concrete example path `$HOME/Documents/testneo-mcp` instead of generic `/path/to/...` placeholders.
+- README: onboarding for TestNeo Cloud (`https://app.testneo.ai`), links to [testneo.ai](https://testneo.ai) and [hosted MCP docs](https://testneo.ai/docs/testneo-mcp.html); production smoke example; maintainer mirror notes moved to end + `docs/PUBLISHING.md`.
+- `.env.example`: default `TESTNEO_BASE_URL` to production; comment for self-hosted.
 
 ## [0.1.0] - 2025-2026
 

@@ -1,140 +1,179 @@
-# @testneo/mcp-server (v1)
+# @testneo/mcp-server
 
-Model Context Protocol (MCP) server for TestNeo quality workflows.
+**TestNeo MCP** connects Cursor, VS Code, Claude Desktop, and other [MCP](https://modelcontextprotocol.io)-compatible clients to [**TestNeo**](https://testneo.ai) — so your AI chat can list projects, inspect runs, generate tests from context (including Swagger/OpenAPI and design context), and (when you allow it) execute tests with guardrails.
 
-This server exposes TestNeo project/execution tools to MCP-compatible IDE clients (Cursor, Claude Desktop, VS Code MCP clients, etc.).
+| Resource | Link |
+|----------|------|
+| **Product** | [testneo.ai](https://testneo.ai) |
+| **Sign up & app** | [app.testneo.ai/signup](https://app.testneo.ai/signup) |
+| **Hosted MCP docs** (quickstart, tools, workflows, security) | [testneo.ai/docs/testneo-mcp.html](https://testneo.ai/docs/testneo-mcp.html) |
+| **Source** | [github.com/gururajhm-neo/testneo-mcp](https://github.com/gururajhm-neo/testneo-mcp) |
 
-## Public mirror (MCP Market / GitHub)
+---
 
-The **standalone** open-source mirror used for listings and sharing is:
+## Get started (production)
 
-**https://github.com/gururajhm-neo/testneo-mcp**
+### 1) Create a TestNeo account and project
 
-This directory is the **source of truth** inside the TestNeo API monorepo. To refresh the public repo after you change this package, run:
+1. Open **[app.testneo.ai/signup](https://app.testneo.ai/signup)** and register.
+2. In the app, **create a project** (web/API automation) and note the **project id** when you run workflows from chat.
+3. Open your account/API settings and **create an API key** (`tn_…`). Treat it like a password.
 
-```bash
-./scripts/sync-public-mcp-repo.sh /path/to/your/local/testneo-mcp-clone
+### 2) Point the MCP server at TestNeo Cloud
+
+Use the **production API base URL**:
+
+| Variable | Value |
+|----------|--------|
+| `TESTNEO_BASE_URL` | **`https://app.testneo.ai`** |
+| `TESTNEO_API_KEY` | your `tn_…` key |
+
+Self-hosted customers can set `TESTNEO_BASE_URL` to their own API origin instead.
+
+### 3) Add the server to your IDE (recommended: `npx`)
+
+No global install required. Example for **Cursor** (`~/.cursor/mcp.json` or **Settings → MCP**):
+
+```json
+{
+  "mcpServers": {
+    "testneo": {
+      "command": "npx",
+      "args": ["-y", "@testneo/mcp-server"],
+      "env": {
+        "TESTNEO_BASE_URL": "https://app.testneo.ai",
+        "TESTNEO_API_KEY": "tn_YOUR_KEY_HERE",
+        "TESTNEO_MCP_ALLOW_WRITE": "false"
+      }
+    }
+  }
+}
 ```
 
-Then `git commit` + `git push` from that clone. License: **GPL-3.0** — see `LICENSE`. Security reporting: see `SECURITY.md`.
+Keep **`TESTNEO_MCP_ALLOW_WRITE`** at **`false`** until you intentionally want execute/rerun/Swagger-write tools; read-only tools still work. Write tools also need **`confirm=true`** on each call — see [hosted security section](https://testneo.ai/docs/testneo-mcp.html).
 
-**Stay in testneo-api (no CI secret on your laptop):** from `packages/testneo-mcp-server` run `./scripts/push-public-mirror-local.sh ~/path/to/testneo-mcp-clone` — uses your normal Git auth. Optional: add secret **`MCP_PUBLIC_MIRROR_PUSH_TOKEN`** on the **testneo-api** GitHub repo only if you want **Actions** to push the mirror after merge to `main` (see `docs/PUBLISHING.md`).
+### 4) Reload MCP and verify
 
-## Responses
+Restart the IDE (or reload MCP servers), then in chat:
 
-- Every tool merges **`_telemetry`** into JSON results: **`request_id`**, **`tool`**, **`duration_ms`**, **`backend_paths`** (`METHOD path` per backend call traced from this process), plus schema marker **`telemetry_schema_version`** and best-effort dimensions (**`project_id`**, nullable **`tenant_id`**).
-- **`testneo_get_failure_bundle`** (and triage-heavy **`testneo_run_agent_workflow`** steps) may include **`suggested_nlp_patch`** when **`include_nlp_patch_suggestion`** is true (default). Full tool list and contracts: **`docs/MCP_TOOL_REFERENCE.md`** (kept in sync with the monorepo’s `docs/mcp-tool-reference.md` via `scripts/sync-public-mcp-repo.sh`).
-- **Project execution preconditions (default on):** generate and execute-family tools return **`project_precondition_failed`** unless the project resolves a real **http(s)** base URL (`website_url` or environment `base_url`). Rejects **`example.com`** placeholders. Disable only for special cases: **`TESTNEO_MCP_RELAX_PROJECT_PRECONDITIONS=true`**.
-- **Execution contract normalization:** execution-intelligence tools emit **`contract_version: execution_intelligence.v1`** and canonical statuses (`queued | running | passed | failed | cancelled | unknown`) while preserving raw backend status.
+```text
+Validate my TestNeo connection
+```
 
-## v1 scope
+```text
+List my TestNeo projects
+```
 
-Read-heavy tools + guarded write actions:
+### 5) Go deeper
 
-- `testneo_validate_connection`
-- `testneo_list_projects`
-- `testneo_get_project_route_map` (read project-level route hardening map/profile)
-- `testneo_list_unified_contexts` (browse contexts by name + id)
-- `testneo_get_unified_context_by_name` (resolve `context_id` without the UI)
-- `testneo_list_recent_executions`
-- `testneo_get_execution_status`
-- `testneo_get_execution_summary`
-- `testneo_get_execution_logs`
-- `testneo_get_pass_fail_trend`
-- `testneo_watch_execution`
-- `testneo_get_failure_bundle`
-- `testneo_run_agent_workflow` (`triage_failure_workflow`, `rerun_decision_workflow`, `qa_intelligence_workflow`)
-- `testneo_ingest_figma_context` (Figma ETL + unified context creation)
-- `testneo_generate_tests_from_context` (unified context -> NLP test generation; optional route hardening)
-- `testneo_preview_generated_tests` (human-in-loop preview: NLP + Playwright spec drafts)
-- `testneo_apply_route_hardening` (read-only: normalize vague Navigate-to lines using phrase maps)
-- `testneo_set_project_route_map` (persist project-level route map/profile; guarded write)
-- `testneo_execute_generated_test_case` (guarded execution of approved generated tests)
-- `testneo_update_test_case_nlp` (update NLP commands for a generated test)
-- `testneo_export_playwright_spec` (export generated test as Playwright SDK `.spec.ts`)
-- `testneo_run_playwright_spec_preview` (execute parsed `ai.run` flow from spec draft)
-- `testneo_figma_to_tests_workflow` (end-to-end Figma -> Context -> Tests -> Preview)
-- `testneo_search_failures`
-- `testneo_rerun_failed` (preview by default; execution requires `TESTNEO_MCP_ALLOW_WRITE=true` and `confirm=true`)
-- `testneo_trigger_playwright_execution` (requires `TESTNEO_MCP_ALLOW_WRITE=true` and `confirm=true`)
-- **Swagger/OpenAPI intelligence**
-  - `testneo_swagger_preview` (read-only: parse spec from base64 → tags, endpoint counts)
-  - `testneo_swagger_upload_and_generate` (web project: Swagger + optional business rules → context + NLP tests; write + confirm)
-  - `testneo_swagger_impact_analysis` / `testneo_swagger_impact_actions` (web: diff vs snapshot, triage actions; write + confirm)
-  - `testneo_api_project_upload_openapi` / `testneo_api_project_openapi_impact` (classic API projects; write + confirm)
+Follow **[TestNeo MCP — Docs](https://testneo.ai/docs/testneo-mcp.html)** for quickstart detail, **tool reference**, **workflows** (e.g. `qa_intelligence_workflow`), and **troubleshooting**. This repo’s **`docs/MCP_TOOL_REFERENCE.md`** mirrors the same tool list for offline browsing.
 
-## Setup
+---
+
+## Why use TestNeo MCP?
+
+- **Less context switching** — quality signals, generation, and execution requests happen in the same chat as your code.
+- **Guarded writes** — mutating tools stay off unless you set `TESTNEO_MCP_ALLOW_WRITE=true` and pass `confirm=true`.
+- **Same backend as the product** — projects, executions, Swagger pipeline, Figma/context flows, and Playwright SDK paths all go through your real TestNeo deployment.
+
+---
+
+## Smoke check (against your account)
+
+From a clone of this repo, after `npm install` and `npm run build`:
 
 ```bash
-cd packages/testneo-mcp-server
+TESTNEO_BASE_URL="https://app.testneo.ai" TESTNEO_API_KEY="tn_YOUR_KEY_HERE" npm run smoke
+```
+
+Copy **`.env.example`** to `.env` and edit values if you prefer loading env from a file (your shell or tooling must export them before `npm run smoke`).
+
+---
+
+## Optional: run from a local build instead of `npx`
+
+```bash
 npm install
 npm run build
 ```
 
-Required env:
+Point your MCP config at:
 
-- `TESTNEO_BASE_URL` (example: `http://localhost:8001`)
-- `TESTNEO_API_KEY`
+```bash
+node /absolute/path/to/this/repo/dist/index.js
+```
 
-Optional:
+See **`docs/IDE_SETUP.md`** for more client-specific notes.
 
-- `TESTNEO_MCP_ALLOW_WRITE=false` (default)
-- `TESTNEO_MCP_RELAX_PROJECT_PRECONDITIONS=false` (default) — set `true` only to skip executable-base URL checks on generate/execute tools
-- `TESTNEO_MCP_TELEMETRY_JSONL=false` (default) — set `true` to emit one JSON line per tool invocation to stderr (`outcome`, `request_id`, `duration_ms`, `backend_paths`)
-- `TESTNEO_MCP_POLICY_MODE=strict` (default) or `warn` — precondition policy behavior (`strict` blocks on blocker findings, `warn` downgrades some checks)
-- `TESTNEO_MCP_TIMEOUT_MS=20000`
-- `TESTNEO_MCP_SWAGGER_TIMEOUT_MS=120000` (Swagger multipart + heavy OpenAPI impact JSON calls)
-- `TESTNEO_MCP_USER_AGENT=@testneo/mcp-server`
-- `TESTNEO_ROUTE_HARDENING=true` (default) — set `false` to disable phrase→path rewrites globally
-- `TESTNEO_ROUTE_PROFILE=none` (default) or `saucedemo` — optional preset phrase map (not required for other apps)
-- `TESTNEO_ROUTE_MAP_JSON` — JSON object of phrase → path (e.g. `{"checkout overview":"/checkout"}`); merged over the preset when profile is `saucedemo`, or used alone when profile is `none`. Paths should start with `/`.
+---
 
-**Generation:** `testneo_generate_tests_from_context` defaults to **`auto_align_saucedemo_route_map=true`**, so Navigate lines get SauceDemo URLs when auth preset is SauceDemo and you have no custom env map (`profile` `none`, empty JSON map).
+## Responses & contracts
 
-## Tests (no API)
+- Tool responses include **`_telemetry`** (`request_id`, `duration_ms`, `backend_paths`, etc.) for support and auditing.
+- **`testneo_get_failure_bundle`** (and triage-heavy **`testneo_run_agent_workflow`** steps) may include **`suggested_nlp_patch`** when **`include_nlp_patch_suggestion`** is true (default). Details: **`docs/MCP_TOOL_REFERENCE.md`**.
+- **Project execution preconditions (default on):** generate/execute-style tools may return **`project_precondition_failed`** unless the project resolves a real **https** base URL for the app under test (`website_url` or environment `base_url`). **`example.com`** placeholders are rejected. For special dev setups only: **`TESTNEO_MCP_RELAX_PROJECT_PRECONDITIONS=true`**.
+- **Execution intelligence:** normalized payloads use **`contract_version: execution_intelligence.v1`** (or pipeline variants) and **`canonical_status`** (`queued` \| `running` \| `passed` \| `failed` \| `cancelled` \| `unknown`) alongside raw backend status.
 
-Runs a production build, then route-hardening, unified-context discovery, and project-precondition classifiers (no HTTP calls to the TestNeo API):
+---
+
+## v1 tool surface (summary)
+
+Read-heavy: connection, projects, executions, logs, trends, watch, failure bundles, agent workflows, unified contexts, Swagger preview, route map, etc.
+
+Writes (guarded): execute generated test, **`testneo_run_generated_test_pipeline`** (run + wait + report), rerun failed, trigger Playwright, Swagger upload/impact, NLP updates, route map persist, Figma ingest, etc.
+
+Full list: **`docs/MCP_TOOL_REFERENCE.md`** or [hosted tool reference](https://testneo.ai/docs/testneo-mcp.html).
+
+---
+
+## Environment reference
+
+**Required**
+
+- `TESTNEO_BASE_URL` — use **`https://app.testneo.ai`** for TestNeo Cloud; otherwise your self-hosted API origin.
+- `TESTNEO_API_KEY` — from the app after signup.
+
+**Common optional flags**
+
+- `TESTNEO_MCP_ALLOW_WRITE` — default `false`; set `true` only when you want mutating tools.
+- `TESTNEO_MCP_RELAX_PROJECT_PRECONDITIONS` — default `false`.
+- `TESTNEO_MCP_TELEMETRY_JSONL`, `TESTNEO_MCP_POLICY_MODE`, `TESTNEO_MCP_TIMEOUT_MS`, `TESTNEO_MCP_SWAGGER_TIMEOUT_MS`, `TESTNEO_MCP_USER_AGENT`
+- Route hardening: `TESTNEO_ROUTE_HARDENING`, `TESTNEO_ROUTE_PROFILE`, `TESTNEO_ROUTE_MAP_JSON`
+
+**Generation:** `testneo_generate_tests_from_context` defaults to **`auto_align_saucedemo_route_map=true`** for SauceDemo-style auth presets when no custom map is set.
+
+---
+
+## Tests (no live API)
 
 ```bash
 npm test
 ```
 
-## Smoke check
+Runs build checks and offline guardrail scripts (no `TESTNEO_BASE_URL` required).
 
-```bash
-TESTNEO_BASE_URL="http://localhost:8001" TESTNEO_API_KEY="tn_xxx" npm run smoke
-```
+---
 
-## Cursor/IDE command
+## Security
 
-The MCP command should run:
+- API key is read **only** from the environment.
+- Write tools are **disabled** unless `TESTNEO_MCP_ALLOW_WRITE=true`.
+- Write tools require **`confirm=true`** (and optional **`idempotency_key`** for safe retries).
 
-```bash
-node /absolute/path/to/testneo-api/packages/testneo-mcp-server/dist/index.js
-```
+More policy detail: [Security & Governance](https://testneo.ai/docs/testneo-mcp.html) on the hosted docs.
 
-See `docs/IDE_SETUP.md` for config guidance and example prompts.
+---
 
-## Security notes
+## License & reporting
 
-- API key is only read from environment.
-- Write tool is disabled by default.
-- Trigger tool requires explicit `confirm=true`.
-- Write tools support optional `idempotency_key` to prevent replay/duplicate execution on retries.
+- **License:** GPL-3.0 — see **`LICENSE`**.
+- **Security:** see **`SECURITY.md`**.
+- **Changelog:** **`CHANGELOG.md`**.
 
-## Agentic workflows (Phase 2A)
+---
 
-`testneo_run_agent_workflow` adds an orchestration layer over core tools and returns structured step traces:
+## Maintainers only: public GitHub mirror
 
-- `triage_failure_workflow`: recent failures -> top failure bundles -> recurring themes
-- `rerun_decision_workflow`: recent failures -> rerun candidate planning (preview-first)
-- `qa_intelligence_workflow`: unified intelligence report (trend + failures + triage + rerun preview)
+The npm package and **[gururajhm-neo/testneo-mcp](https://github.com/gururajhm-neo/testneo-mcp)** mirror are synced from the private TestNeo monorepo. **Do not put monorepo paths or internal CI tokens in your MCP client config** — that is maintainer workflow only.
 
-## Figma-to-tests workflows (Phase 2B)
-
-MCP now supports context-driven generation with human approval:
-
-- Ingest Figma metadata and link ETL output into unified context
-- Generate NLP tests from context entities via existing LangGraph pipeline
-- Preview generated tests in both NLP and Playwright SDK `.spec.ts` draft format
-- Execute approved generated tests through guarded write actions
+Instructions (local push, optional GitHub Actions secret): **`docs/PUBLISHING.md`**.

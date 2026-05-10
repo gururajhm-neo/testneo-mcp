@@ -1,25 +1,30 @@
 # TestNeo MCP Server - IDE Setup
 
-## 1) Build server
+For product overview and **Cursor / Claude / VS Code** snippets, start with the hosted guide: **[testneo.ai/docs/testneo-mcp.html](https://testneo.ai/docs/testneo-mcp.html)**.
+
+## 1) Build server (optional if you use `npx -y @testneo/mcp-server`)
+
+From this repository’s root:
 
 ```bash
-cd packages/testneo-mcp-server
 npm install
 npm run build
 ```
 
 ## 2) Environment variables
 
-- `TESTNEO_BASE_URL` (e.g. `http://localhost:8001`)
-- `TESTNEO_API_KEY` (Bearer token)
-- optional: `TESTNEO_MCP_ALLOW_WRITE=true` to enable trigger tool
+- `TESTNEO_BASE_URL` — **`https://app.testneo.ai`** for TestNeo Cloud; or your self-hosted API URL (e.g. `http://localhost:8001` only for local API development).
+- `TESTNEO_API_KEY` — create in the app after [signup](https://app.testneo.ai/signup).
+- Optional: `TESTNEO_MCP_ALLOW_WRITE=true` to enable guarded write tools (still require `confirm=true` per call).
 
 ## 3) MCP command
 
-Use this command in your IDE MCP server config:
+**Recommended:** use `npx` as in the [hosted quickstart](https://testneo.ai/docs/testneo-mcp.html) (no path to this repo required).
+
+**Local build:** point your IDE at:
 
 ```bash
-node /absolute/path/to/testneo-api/packages/testneo-mcp-server/dist/index.js
+node /absolute/path/to/this-repo/dist/index.js
 ```
 
 ## Suggested prompts
