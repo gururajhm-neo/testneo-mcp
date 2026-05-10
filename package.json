@@ -1,0 +1,47 @@
+{
+  "name": "@testneo/mcp-server",
+  "version": "0.1.0",
+  "description": "Model Context Protocol server for TestNeo quality workflows",
+  "license": "GPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gururajhm-neo/testneo-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gururajhm-neo/testneo-mcp/issues"
+  },
+  "homepage": "https://github.com/gururajhm-neo/testneo-mcp#readme",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "docs",
+    "LICENSE",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md"
+  ],
+  "bin": {
+    "testneo-mcp-server": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "prepare": "npm run clean && npm run build",
+    "pretest": "npm run build",
+    "test": "node scripts/route-hardening-check.mjs && node scripts/unified-context-discovery-check.mjs && node scripts/project-preconditions-check.mjs && node scripts/tool-telemetry-check.mjs && node scripts/project-route-map-check.mjs && node scripts/execution-contracts-check.mjs && node scripts/policy-engine-check.mjs && node scripts/idempotency-check.mjs && node scripts/swagger-intel-check.mjs",
+    "smoke": "node dist/smoke.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "typescript": "^5.6.3"
+  }
+}
