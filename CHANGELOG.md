@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `testneo_execute_generated_test_case` / `testneo_run_generated_test_pipeline`: optional `environment_id` / `environment_name` for execution requests.
 - `testneo_run_generated_test_pipeline`: project trend fallback when execution payloads omit `project_id`.
+- Mirror scripts: usage text uses concrete example path `$HOME/Documents/testneo-mcp` instead of generic `/path/to/...` placeholders.
 
 ## [0.1.0] - 2025-2026
 

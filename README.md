@@ -18,6 +18,8 @@ This directory is the **source of truth** inside the TestNeo API monorepo. To re
 
 Then `git commit` + `git push` from that clone. License: **GPL-3.0** — see `LICENSE`. Security reporting: see `SECURITY.md`.
 
+**Stay in testneo-api (no CI secret on your laptop):** from `packages/testneo-mcp-server` run `./scripts/push-public-mirror-local.sh ~/path/to/testneo-mcp-clone` — uses your normal Git auth. Optional: add secret **`MCP_PUBLIC_MIRROR_PUSH_TOKEN`** on the **testneo-api** GitHub repo only if you want **Actions** to push the mirror after merge to `main` (see `docs/PUBLISHING.md`).
+
 ## Responses
 
 - Every tool merges **`_telemetry`** into JSON results: **`request_id`**, **`tool`**, **`duration_ms`**, **`backend_paths`** (`METHOD path` per backend call traced from this process), plus schema marker **`telemetry_schema_version`** and best-effort dimensions (**`project_id`**, nullable **`tenant_id`**).

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Sync packages/testneo-mcp-server → a standalone git clone (e.g. github.com/gururajhm-neo/testneo-mcp).
 #
-# Usage:
-#   ./scripts/sync-public-mcp-repo.sh /path/to/testneo-mcp
-#   TESTNEO_MCP_PUBLIC_REPO=/path/to/testneo-mcp ./scripts/sync-public-mcp-repo.sh
+# Usage (example — replace with YOUR clone path):
+#   ./scripts/sync-public-mcp-repo.sh ~/Documents/testneo-mcp
+#   TESTNEO_MCP_PUBLIC_REPO=~/Documents/testneo-mcp ./scripts/sync-public-mcp-repo.sh
 #
 # From monorepo root:
 #   packages/testneo-mcp-server/scripts/sync-public-mcp-repo.sh ~/src/testneo-mcp
@@ -19,8 +19,9 @@ MONO_ROOT="$(cd "${PKG_ROOT}/../.." && pwd)"
 
 DEST="${1:-${TESTNEO_MCP_PUBLIC_REPO:-}}"
 if [[ -z "${DEST}" ]]; then
-  echo "Usage: $0 /absolute/path/to/testneo-mcp-clone" >&2
-  echo "   or: TESTNEO_MCP_PUBLIC_REPO=/path/to/testneo-mcp $0" >&2
+  echo "Usage: $0 <absolute-path-to-your-testneo-mcp-git-clone>" >&2
+  echo "Example:  $0 \$HOME/Documents/testneo-mcp" >&2
+  echo "Or set env: TESTNEO_MCP_PUBLIC_REPO=\$HOME/Documents/testneo-mcp $0" >&2
   exit 1
 fi
 

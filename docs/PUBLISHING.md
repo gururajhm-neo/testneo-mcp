@@ -32,6 +32,34 @@ The **public** GitHub repo ([gururajhm-neo/testneo-mcp](https://github.com/gurur
    git push
    ```
 
+## Automated push from testneo-api (optional — CI only)
+
+GitHub Actions cannot push to another repository **without** credentials. Secret **`MCP_PUBLIC_MIRROR_PUSH_TOKEN`** is a PAT so the workflow in **testneo-api** can push to **testneo-mcp** after you merge to `main`. You do **not** need this secret on your laptop.
+
+Workflow: **`.github/workflows/sync-mcp-public-mirror.yml`** (see repo root). If the secret is missing, the job skips (no error).
+
+## One command from your machine (no CI token)
+
+Use your normal **SSH key or `gh` / HTTPS credential** for GitHub:
+
+```bash
+cd /Users/gururajhm/Documents/testneo-api/packages/testneo-mcp-server
+./scripts/push-public-mirror-local.sh /path/to/your/local/testneo-mcp-clone
+```
+
+That runs sync + `git commit` + `git push` on the clone. Clone once:
+
+```bash
+git clone https://github.com/gururajhm-neo/testneo-mcp.git ~/src/testneo-mcp
+```
+
+Then whenever you change the MCP package:
+
+```bash
+cd /Users/gururajhm/Documents/testneo-api/packages/testneo-mcp-server
+./scripts/push-public-mirror-local.sh ~/src/testneo-mcp
+```
+
 ## MCP Market
 
 Submit the public repo URL: **https://github.com/gururajhm-neo/testneo-mcp**
