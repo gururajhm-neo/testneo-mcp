@@ -1,6 +1,6 @@
 # @testneo/mcp-server
 
-**TestNeo MCP** connects Cursor, VS Code, Claude Desktop, and other [MCP](https://modelcontextprotocol.io)-compatible clients to [**TestNeo**](https://testneo.ai) — so your AI chat can list projects, inspect runs, generate tests from context (including Swagger/OpenAPI and design context), and (when you allow it) execute tests with guardrails.
+**TestNeo MCP** connects Cursor, VS Code, Claude Desktop, and other [MCP](https://modelcontextprotocol.io)-compatible clients to [**TestNeo**](https://testneo.ai) — so your AI chat can list projects, inspect runs, generate tests from context (including Swagger/OpenAPI and design context), and (when you allow it) execute tests with guardrails. **Differentiation:** the **VS Code extension** fits **in-editor** right‑click generate → tweak → run; **MCP** fits **chat- and agent-driven** TestNeo workflows from Cursor and other MCP clients — see [VS Code extension or MCP?](../../docs/mcp-quickstart.md#vs-code-extension-or-testneo-mcp) in the monorepo quickstart.
 
 | Resource | Link |
 |----------|------|
