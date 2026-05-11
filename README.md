@@ -61,7 +61,7 @@ Keep **`TESTNEO_MCP_ALLOW_WRITE`** at **`false`** until you intentionally want e
 | **`idempotency_key`** | Optional (**≥ 8** chars when set): dedupes retries so the same logical action is not applied twice. |
 | **`environment_name` / `environment_id`** | On execution tools: which **project environment** supplies `{{base_url}}` and credentials (must match TestNeo UI). |
 
-**Guardrails (full table + install):** when developing inside **testneo-api**, see [docs/mcp-quickstart.md](../../docs/mcp-quickstart.md). For the **standalone npm/GitHub** package only, use [TestNeo MCP docs](https://testneo.ai/docs/testneo-mcp.html) (same content when published).
+**Guardrails (full table + install):** when developing inside **testneo-api**, see [docs/mcp-quickstart.md](../../docs/mcp-quickstart.md) (includes **§7 NLP API from Swagger**) and [customer E2E playbook](../../docs/mcp-customer-e2e-playbook.md#part-f-swagger-api-nlp-flow). For the **standalone npm/GitHub** package only, use [TestNeo MCP docs](https://testneo.ai/docs/testneo-mcp.html) (same content when published).
 
 ### 4) Reload MCP and verify
 
