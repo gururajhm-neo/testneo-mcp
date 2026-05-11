@@ -52,6 +52,17 @@ No global install required. Example for **Cursor** (`~/.cursor/mcp.json` or **Se
 
 Keep **`TESTNEO_MCP_ALLOW_WRITE`** at **`false`** until you intentionally want execute/rerun/Swagger-write tools; read-only tools still work. Write tools also need **`confirm=true`** on each call — see [hosted security section](https://testneo.ai/docs/testneo-mcp.html).
 
+### Guardrails (quick reference)
+
+| Knob | Role |
+|------|------|
+| **`TESTNEO_MCP_ALLOW_WRITE`** | MCP env: **`false`** = read-only tools only; **`true`** = mutating tools may call the API. Restart MCP after changing. |
+| **`confirm`** | Per guarded tool: **`false`** = preview/dry; **`true`** = perform (execute, pipeline, bootstrap create, etc.). Needs allow-write where applicable. |
+| **`idempotency_key`** | Optional (**≥ 8** chars when set): dedupes retries so the same logical action is not applied twice. |
+| **`environment_name` / `environment_id`** | On execution tools: which **project environment** supplies `{{base_url}}` and credentials (must match TestNeo UI). |
+
+**Guardrails (full table + install):** when developing inside **testneo-api**, see [docs/mcp-quickstart.md](../../docs/mcp-quickstart.md). For the **standalone npm/GitHub** package only, use [TestNeo MCP docs](https://testneo.ai/docs/testneo-mcp.html) (same content when published).
+
 ### 4) Reload MCP and verify
 
 Restart the IDE (or reload MCP servers), then in chat:

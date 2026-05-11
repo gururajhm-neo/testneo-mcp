@@ -65,16 +65,59 @@ function asRecordArray(v: unknown): Array<Record<string, unknown>> {
   return v.filter((x) => x && typeof x === "object" && !Array.isArray(x)) as Array<Record<string, unknown>>;
 }
 
+/**
+ * Normalize environment variables from TestNeo API shapes:
+ * - `variables` as a dict: `{ base_url: "https://...", username: "..." }` (some gateways)
+ * - `variables` as an array of `{ variable_name, variable_value }` (FastAPI / Pydantic `WebProjectEnvironmentResponse`)
+ * - `variables_list` same as array form (legacy web_main JSON)
+ */
+export function flattenEnvironmentVariables(env: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  const raw = env.variables;
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const o = item as Record<string, unknown>;
+      const name =
+        typeof o.variable_name === "string"
+          ? o.variable_name
+          : typeof o.name === "string"
+            ? o.name
+            : "";
+      const val =
+        typeof o.variable_value === "string"
+          ? o.variable_value
+          : typeof o.value === "string"
+            ? o.value
+            : "";
+      if (name.trim()) out[name.trim()] = val;
+    }
+  } else if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof v === "string") out[k] = v;
+    }
+  }
+  const listRaw = env.variables_list;
+  if (Array.isArray(listRaw)) {
+    for (const item of listRaw) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const o = item as Record<string, unknown>;
+      const name = typeof o.variable_name === "string" ? o.variable_name : "";
+      const val = typeof o.variable_value === "string" ? o.variable_value : "";
+      if (name.trim() && out[name.trim()] === undefined) out[name.trim()] = val;
+    }
+  }
+  return out;
+}
+
 function pickBaseFromEnvironmentRow(
   env: Record<string, unknown>
 ): { value: string; source: "environment_base_url" | "environment_variable_base_url" } | null {
   const top = typeof env.base_url === "string" ? env.base_url.trim() : "";
   if (top) return { value: top, source: "environment_base_url" };
-  const vars = env.variables;
-  if (vars && typeof vars === "object" && !Array.isArray(vars)) {
-    const bv = (vars as Record<string, unknown>).base_url;
-    if (typeof bv === "string" && bv.trim()) return { value: bv.trim(), source: "environment_variable_base_url" };
-  }
+  const flat = flattenEnvironmentVariables(env);
+  const bv = flat.base_url?.trim();
+  if (bv) return { value: bv, source: "environment_variable_base_url" };
   return null;
 }
 

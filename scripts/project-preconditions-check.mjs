@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { loadConfig } from "../dist/config.js";
-import { classifyExecutableBaseUrl } from "../dist/projectPreconditions.js";
+import { classifyExecutableBaseUrl, flattenEnvironmentVariables } from "../dist/projectPreconditions.js";
 
 const saved = { ...process.env };
 
@@ -36,6 +36,21 @@ try {
   assert.ok(classifyExecutableBaseUrl("https://www.saucedemo.com")?.resolved_base_url);
   assert.ok(classifyExecutableBaseUrl("http://localhost:3000/app")?.resolved_base_url);
   assert.ok(classifyExecutableBaseUrl("app.staging.example.com")?.resolved_base_url);
+
+  const pydanticEnv = {
+    id: 1,
+    name: "staging",
+    base_url: "",
+    variables: [
+      { variable_name: "base_url", variable_value: "https://www.saucedemo.com/" },
+      { variable_name: "username", variable_value: "standard_user" },
+      { variable_name: "password", variable_value: "secret_sauce" },
+    ],
+  };
+  const flat = flattenEnvironmentVariables(pydanticEnv);
+  assert.equal(flat.base_url, "https://www.saucedemo.com/");
+  assert.equal(flat.username, "standard_user");
+  assert.equal(flat.password, "secret_sauce");
 
   process.stdout.write("project-preconditions-check: OK\n");
 } finally {

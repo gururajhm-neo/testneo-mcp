@@ -1,5 +1,5 @@
 import type { HttpClient } from "./httpClient.js";
-import { evaluateProjectExecutableBase } from "./projectPreconditions.js";
+import { evaluateProjectExecutableBase, flattenEnvironmentVariables } from "./projectPreconditions.js";
 
 export type PolicyMode = "strict" | "warn";
 export type PolicySeverity = "blocker" | "warning";
@@ -43,17 +43,10 @@ function asRecordArray(v: unknown): Array<Record<string, unknown>> {
 }
 
 function hasCredentialVars(env: Record<string, unknown>): boolean {
-  const vars = env.variables;
-  if (!vars || typeof vars !== "object" || Array.isArray(vars)) return false;
-  const rec = vars as Record<string, unknown>;
-  const user = rec.username;
-  const pass = rec.password;
-  return (
-    typeof user === "string" &&
-    user.trim().length > 0 &&
-    typeof pass === "string" &&
-    pass.trim().length > 0
-  );
+  const flat = flattenEnvironmentVariables(env);
+  const user = flat.username?.trim() ?? "";
+  const pass = flat.password?.trim() ?? "";
+  return user.length > 0 && pass.length > 0;
 }
 
 export function inferRequiresAuthFromNlp(commands: string[] | undefined): boolean {

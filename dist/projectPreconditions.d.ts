@@ -28,6 +28,13 @@ export type ClassifiedHttpBase = {
  */
 export declare function classifyExecutableBaseUrl(rawInput: unknown): ClassifiedHttpBase;
 /**
+ * Normalize environment variables from TestNeo API shapes:
+ * - `variables` as a dict: `{ base_url: "https://...", username: "..." }` (some gateways)
+ * - `variables` as an array of `{ variable_name, variable_value }` (FastAPI / Pydantic `WebProjectEnvironmentResponse`)
+ * - `variables_list` same as array form (legacy web_main JSON)
+ */
+export declare function flattenEnvironmentVariables(env: Record<string, unknown>): Record<string, string>;
+/**
  * Load project + environments (when needed) and resolve a single executable base URL.
  */
 export declare function evaluateProjectExecutableBase(client: HttpClient, projectId: number): Promise<ProjectExecutableBaseResult>;

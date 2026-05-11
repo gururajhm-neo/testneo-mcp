@@ -10,16 +10,10 @@ function asRecordArray(v) {
     return v.filter((x) => x && typeof x === "object" && !Array.isArray(x));
 }
 function hasCredentialVars(env) {
-    const vars = env.variables;
-    if (!vars || typeof vars !== "object" || Array.isArray(vars))
-        return false;
-    const rec = vars;
-    const user = rec.username;
-    const pass = rec.password;
-    return (typeof user === "string" &&
-        user.trim().length > 0 &&
-        typeof pass === "string" &&
-        pass.trim().length > 0);
+    const flat = (0, projectPreconditions_js_1.flattenEnvironmentVariables)(env);
+    const user = flat.username?.trim() ?? "";
+    const pass = flat.password?.trim() ?? "";
+    return user.length > 0 && pass.length > 0;
 }
 function inferRequiresAuthFromNlp(commands) {
     if (!commands || !commands.length)
