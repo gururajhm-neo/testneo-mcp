@@ -140,17 +140,33 @@ Full list: **`docs/MCP_TOOL_REFERENCE.md`** or [hosted tool reference](https://t
 - `TESTNEO_MCP_TELEMETRY_JSONL`, `TESTNEO_MCP_POLICY_MODE`, `TESTNEO_MCP_TIMEOUT_MS`, `TESTNEO_MCP_SWAGGER_TIMEOUT_MS`, `TESTNEO_MCP_USER_AGENT`
 - Route hardening: `TESTNEO_ROUTE_HARDENING`, `TESTNEO_ROUTE_PROFILE`, `TESTNEO_ROUTE_MAP_JSON`
 
-**Generation:** `testneo_generate_tests_from_context` defaults to **`auto_align_saucedemo_route_map=true`** for SauceDemo-style auth presets when no custom map is set.
+**Context generation:** For **SauceDemo.com** demos only, pass **`auth_preamble: { enabled: true, preset: "saucedemo" }`** so login lines and optional route phrase alignment apply. For **any other site** (e.g. public demos, your own app), **omit `auth_preamble`** — no SauceDemo login is injected and env username/password checks are not forced for that call. Use **`TESTNEO_ROUTE_MAP_JSON`** or **`testneo_set_project_route_map`** when Navigate steps need phrase → path hints.
+
+**More detail:** **`docs/MCP_NON_SAUCE_DEMO_TESTING.md`** (in this repo / npm package docs folder). Canonical copy in the monorepo: `docs/mcp-non-saucedemo-testing.md`.
 
 ---
 
 ## Tests (no live API)
 
 ```bash
+npm install
 npm test
 ```
 
-Runs build checks and offline guardrail scripts (no `TESTNEO_BASE_URL` required).
+`npm test` runs a **`pretest`** build, then offline guardrail scripts (no `TESTNEO_API_KEY` required).
+
+### If `npm install` feels stuck or slow
+
+Older versions of this repo used a **`prepare`** hook that ran a full rebuild on **every** install; that hook is **removed**. If install still hangs, try:
+
+```bash
+cd packages/testneo-mcp-server
+npm install --no-audit --no-fund --ignore-scripts
+npm run build
+npm test
+```
+
+This package includes **`.npmrc`** (`audit=false`, `fund=false`, `progress=false`) so installs are less chatty.
 
 ---
 

@@ -35,6 +35,10 @@ if [[ -f "${MONO_ROOT}/docs/mcp-tool-reference.md" ]]; then
   cp "${MONO_ROOT}/docs/mcp-tool-reference.md" "${PKG_ROOT}/docs/MCP_TOOL_REFERENCE.md"
   echo "Updated docs/MCP_TOOL_REFERENCE.md from docs/mcp-tool-reference.md"
 fi
+if [[ -f "${MONO_ROOT}/docs/mcp-non-saucedemo-testing.md" ]]; then
+  cp "${MONO_ROOT}/docs/mcp-non-saucedemo-testing.md" "${PKG_ROOT}/docs/MCP_NON_SAUCE_DEMO_TESTING.md"
+  echo "Updated docs/MCP_NON_SAUCE_DEMO_TESTING.md from docs/mcp-non-saucedemo-testing.md"
+fi
 
 rsync -a --delete \
   --exclude node_modules \

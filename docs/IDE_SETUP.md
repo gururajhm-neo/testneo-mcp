@@ -39,7 +39,7 @@ node /absolute/path/to/this-repo/dist/index.js
 - "Ingest Figma context for project 47 and create unified context named 'Figma — Checkout flow'."
 - "List unified contexts for project 47."
 - "Resolve unified context by name for project 47 — name_query 'figma checkout' (then use resolved_context_id for generation)."
-- "Generate tests from unified context for project 47 using the context_id returned by get_unified_context_by_name, with auth_preamble preset saucedemo."
+- "Generate tests from unified context for project 47 using the resolved_context_id from testneo_get_unified_context_by_name, with auth_preamble preset saucedemo."
 - "Preview generated tests as NLP and Playwright spec drafts."
 - "Update NLP commands for test case 7708 with corrected checkout route."
 - "Export test case 7708 as Playwright SDK spec."

@@ -1,5 +1,13 @@
 # TestNeo MCP Tool Reference
 
+The TestNeo MCP server (`packages/testneo-mcp-server`) exposes **37** tools, all prefixed with `testneo_`. This page is the public copy; the package also ships [MCP_TOOL_REFERENCE.md](../packages/testneo-mcp-server/docs/MCP_TOOL_REFERENCE.md) (kept in sync with this file).
+
+**Agent workflows:** `qa_intelligence_workflow`, `triage_failure_workflow`, and `rerun_decision_workflow` are **not** separate tool names. They are values of **`workflow_type`** on **`testneo_run_agent_workflow`** (see [Agent workflow tool](#agent-workflow-tool-testneo_run_agent_workflow)).
+
+## Alphabetical index (all tools)
+
+`testneo_api_project_openapi_impact` · `testneo_api_project_upload_openapi` · `testneo_apply_route_hardening` · `testneo_bootstrap_web_mcp_project` · `testneo_create_web_project` · `testneo_create_web_project_environment` · `testneo_execute_generated_test_case` · `testneo_export_playwright_spec` · `testneo_figma_image_to_tests_workflow` · `testneo_figma_to_tests_workflow` · `testneo_generate_tests_from_context` · `testneo_get_execution_logs` · `testneo_get_execution_status` · `testneo_get_execution_summary` · `testneo_get_failure_bundle` · `testneo_get_pass_fail_trend` · `testneo_get_project_route_map` · `testneo_get_unified_context_by_name` · `testneo_ingest_figma_context` · `testneo_list_projects` · `testneo_list_recent_executions` · `testneo_list_unified_contexts` · `testneo_preview_generated_tests` · `testneo_rerun_failed` · `testneo_run_agent_workflow` · `testneo_run_generated_test_pipeline` · `testneo_run_playwright_spec_preview` · `testneo_search_failures` · `testneo_set_project_route_map` · `testneo_swagger_impact_actions` · `testneo_swagger_impact_analysis` · `testneo_swagger_preview` · `testneo_swagger_upload_and_generate` · `testneo_trigger_playwright_execution` · `testneo_update_test_case_nlp` · `testneo_validate_connection` · `testneo_watch_execution`
+
 ## Read/Analysis Tools
 - `testneo_validate_connection`
 - `testneo_list_projects`
@@ -12,16 +20,17 @@
 - `testneo_get_pass_fail_trend`
 - `testneo_watch_execution`
 - `testneo_get_failure_bundle`
-- `testneo_run_agent_workflow`
+- `testneo_run_agent_workflow` — multi-step QA workflow over project data; see [Agent workflow tool](#agent-workflow-tool-testneo_run_agent_workflow).
 
 ## Context/Test Generation Tools
 - `testneo_list_unified_contexts`
 - `testneo_get_unified_context_by_name`
 - `testneo_ingest_figma_context`
+- `testneo_figma_to_tests_workflow` — **Figma API token** path: metadata ingest → context → generate.
+- `testneo_figma_image_to_tests_workflow` — **PNG/JPEG export** path (same as product “Upload Figma Image”): multipart upload → vision ETL → unified context → generate (no Figma token).
 - `testneo_generate_tests_from_context`
 - `testneo_preview_generated_tests`
 - `testneo_apply_route_hardening`
-- `testneo_figma_to_tests_workflow`
 - `testneo_set_project_route_map`
 
 ## Swagger / OpenAPI intelligence (web + API projects)
@@ -40,14 +49,48 @@ Responses include a stable envelope: **`contract_version: swagger_intel.v1`** pl
 - `testneo_run_playwright_spec_preview`
 
 ## Write/Execution Tools (Guarded)
-- `testneo_execute_generated_test_case` — optional **`environment_id`** / **`environment_name`** to resolve `{{variables}}` from that web project environment.
-- `testneo_run_generated_test_pipeline` — **execute → poll to terminal → analytics summary + steps + optional failure bundle + project trend** in one call (`contract_version: execution_pipeline.v1`). Same env options as execute; prefers this over chaining watch/status/summary manually.
-- `testneo_rerun_failed`
-- `testneo_trigger_playwright_execution`
 
-These require write enablement + confirmation:
+These require write enablement + confirmation where `confirm` is supported:
+
 - `TESTNEO_MCP_ALLOW_WRITE=true`
-- `confirm=true`
+- `confirm=true` (per tool, when applicable)
+
+| Tool | Notes |
+| --- | --- |
+| `testneo_create_web_project` | `POST /api/web/v1/projects`; requires real **`website_url`** (stored as executable base URL). |
+| `testneo_create_web_project_environment` | `POST /api/web/v1/projects/{id}/environments`; optional **`variables`** (e.g. `base_url` for `{{base_url}}`). |
+| `testneo_bootstrap_web_mcp_project` | Validates → creates project → default env + `base_url` variable; returns **`contract_version: web_project_bootstrap.v1`**. |
+| `testneo_execute_generated_test_case` | Optional **`environment_id`** / **`environment_name`**. |
+| `testneo_run_generated_test_pipeline` | Preferred full run + report (`contract_version: execution_pipeline.v1`). Same env options. |
+| `testneo_rerun_failed` | |
+| `testneo_trigger_playwright_execution` | Raw NLP → SDK execute. |
+| `testneo_set_project_route_map` | Persists `project_settings.mcp_route_hardening`. |
+| `testneo_figma_image_to_tests_workflow` | **Image upload** (base64 + filename): same pipeline as UI “Upload Figma Image”; requires long timeouts for vision. |
+| `testneo_swagger_upload_and_generate` | Multipart upload path for large specs. |
+| `testneo_swagger_impact_analysis` | Persists spec snapshot state for diffing. |
+| `testneo_swagger_impact_actions` | Bulk stale/archive/keep after triage. |
+| `testneo_api_project_upload_openapi` | Classic API project OpenAPI storage. |
+| `testneo_api_project_openapi_impact` | Impact vs stored or inline spec. |
+| `testneo_update_test_case_nlp` | |
+| `testneo_run_playwright_spec_preview` | |
+
+**Mutating but no `confirm` flag:** `testneo_ingest_figma_context` and **`testneo_figma_to_tests_workflow`** (Figma token path) perform ETL and server-side generation without the same `confirm` gate as execute tools. **`testneo_figma_image_to_tests_workflow`** uses **`confirm=true`** like Swagger upload. Use only with intentional credentials and project scope.
+
+Tools not listed here are read-only or compose reads (e.g. `testneo_preview_generated_tests`, `testneo_apply_route_hardening`, `testneo_swagger_preview`).
+
+---
+
+## Agent workflow tool (`testneo_run_agent_workflow`)
+
+**Read-only orchestration** over existing executions: never starts new runs or calls **`testneo_rerun_failed`** by itself. Use **`testneo_run_generated_test_pipeline`** / **`testneo_execute_generated_test_case`** after you approve execution.
+
+| `workflow_type` | Purpose |
+| --- | --- |
+| `qa_intelligence_workflow` | Pass/fail volume, **`latest_failed_execution_ids`**, **`triage_bundles`** (failure bundles + NLP patch hints), **`recurring_themes`**, **`rerun_plan_preview`**. |
+| `triage_failure_workflow` | **`triage_bundles`** + **`recurring_themes`** for the top failed runs (no high-level **`execution_summary`** block). |
+| `rerun_decision_workflow` | **`pass_rate_percent`**, failed count, **`rerun_plan_preview`** only — skips building **`triage_bundles`**. |
+
+**Inputs:** `project_id` (required); `range`: `1d` \| `7d` \| `30d` \| `90d` (default `30d`); `top_failures` 1–5 (default 2); `rerun_limit` 1–20 (default 3).
 
 ---
 
@@ -100,7 +143,7 @@ This reduces downstream prompt/parser drift when backend status strings vary (`c
 - **`proposed_nlp_commands`** — full suggested NLP list.
 - **`testneo_update_test_case_nlp`** — ready-to-call arguments when **`test_case_id`** is known; otherwise **`null`** (use **`proposed_nlp_commands`** as a template).
 
-**`testneo_run_agent_workflow`** (`triage_failure_workflow`, `qa_intelligence_workflow`) enriches each built failure bundle the same way.
+**`testneo_run_agent_workflow`** — for **`triage_failure_workflow`** and **`qa_intelligence_workflow`**, enriches each built failure bundle the same way. **`rerun_decision_workflow`** does not build **`triage_bundles`**.
 
 Heuristics are conservative (route hardening, optional short wait for timeout themes); always review before applying **`testneo_update_test_case_nlp`**.
 
@@ -189,7 +232,11 @@ Recommended for retries from CI agents and orchestrated prompts.
 
 ### `testneo_generate_tests_from_context`
 
-Prefer obtaining `context_id` from **`testneo_get_unified_context_by_name`** (for example after Figma ingest, name fragment `"figma checkout"`). Below, **`203` is an illustrative resolved id**, not fixed.
+Do **not** scrape numeric ids from the UI when you have a label: call **`testneo_get_unified_context_by_name`** with **`name_query`** (e.g. `"figma checkout"` for a context named like **`Figma — Checkout flow`**), then pass its **`resolved_context_id`** as the **`context_id`** field below. The sample value **`203`** is illustrative only.
+
+**Generic sites (no SauceDemo login):** omit **`auth_preamble`** entirely — the server does **not** inject `standard_user` / `secret_sauce` lines and does **not** auto-apply the SauceDemo phrase map unless you explicitly pass **`auth_preamble`** with **`preset: "saucedemo"`**. Environment username/password policy for generation is relaxed when SauceDemo is not requested.
+
+**SauceDemo demos only:**
 
 ```json
 {
@@ -205,7 +252,17 @@ Prefer obtaining `context_id` from **`testneo_get_unified_context_by_name`** (fo
 }
 ```
 
-With **`auto_align_saucedemo_route_map`** left default **`true`** and SauceDemo auth, MCP applies the SauceDemo phrase map whenever env has **`TESTNEO_ROUTE_PROFILE=none`** and no **`TESTNEO_ROUTE_MAP_JSON`**. Set **`false`** to rely only on env + **`route_hardening`** overrides.
+**Public or custom-login app (omit `auth_preamble`):**
+
+```json
+{
+  "project_id": 47,
+  "context_id": 203,
+  "auto_align_saucedemo_route_map": false
+}
+```
+
+With **`auto_align_saucedemo_route_map`** **`true`** **and** explicit SauceDemo **`auth_preamble`**, MCP applies the SauceDemo phrase map when env has **`TESTNEO_ROUTE_PROFILE=none`** and no **`TESTNEO_ROUTE_MAP_JSON`**. For other apps, set **`auto_align_saucedemo_route_map: false`** or supply **`TESTNEO_ROUTE_MAP_JSON`** / **`testneo_set_project_route_map`** for Navigate phrase → path. See [Non–Sauce Demo sites](./mcp-non-saucedemo-testing.md).
 
 ### `testneo_list_unified_contexts`
 ```json
@@ -227,6 +284,17 @@ Matches names like **`Figma — Checkout flow`** when you query `"figma checkout
   "match_mode": "auto",
   "prefer_context_id": 203,
   "include_detail": false
+}
+```
+
+### `testneo_run_generated_test_pipeline`
+
+```json
+{
+  "test_case_id": 7708,
+  "confirm": true,
+  "environment_name": "uat",
+  "idempotency_key": "run-7708-2026-05-10"
 }
 ```
 

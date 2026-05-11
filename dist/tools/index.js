@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerTools = registerTools;
 const zod_1 = require("zod");
+const httpClient_js_1 = require("../httpClient.js");
 const projectRouteMap_js_1 = require("../projectRouteMap.js");
 const routeHardening_js_1 = require("../routeHardening.js");
 const unifiedContextDiscovery_js_1 = require("../unifiedContextDiscovery.js");
@@ -84,8 +85,40 @@ function validateBusinessRulesFilename(name) {
         return "business_rules_filename is too short";
     return undefined;
 }
+const MAX_FIGMA_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
+function validateFigmaImageFilename(name) {
+    const n = name.trim().toLowerCase();
+    const ok = [".png", ".jpg", ".jpeg", ".gif", ".webp"].some((ext) => n.endsWith(ext));
+    if (!ok)
+        return "image_filename must end with .png, .jpg, .jpeg, .gif, or .webp";
+    return undefined;
+}
+function mimeForImageFilename(name) {
+    const n = name.trim().toLowerCase();
+    if (n.endsWith(".png"))
+        return "image/png";
+    if (n.endsWith(".jpg") || n.endsWith(".jpeg"))
+        return "image/jpeg";
+    if (n.endsWith(".gif"))
+        return "image/gif";
+    if (n.endsWith(".webp"))
+        return "image/webp";
+    return "application/octet-stream";
+}
 function result(text) {
     return { content: [{ type: "text", text }] };
+}
+function formatTestNeoApiFailure(e) {
+    if (!(e instanceof httpClient_js_1.TestNeoApiError))
+        return null;
+    let detail = e.body;
+    try {
+        detail = JSON.parse(e.body);
+    }
+    catch {
+        /* keep raw string */
+    }
+    return result(asText({ error: "testneo_api_error", http_status: e.status, path: e.path, detail }));
 }
 function compactExecution(items) {
     if (!items.length)
@@ -1179,6 +1212,344 @@ function registerTools(server, deps) {
             .join("\n");
         return result(`Total projects: ${response.total ?? response.projects?.length ?? 0}\n${summary || "No projects."}`);
     });
+    registerTracedTool("testneo_create_web_project", {
+        description: "Create a new web automation project (stored under your API key account). Mirrors POST /api/web/v1/projects. Guarded: TESTNEO_MCP_ALLOW_WRITE=true and confirm=true. Send a real executable base URL (website_url or target_url).",
+        inputSchema: zod_1.z.object({
+            name: zod_1.z.string().min(1).max(255),
+            website_url: zod_1.z.string().url().describe("HTTPS/HTTP origin for the site under test"),
+            description: zod_1.z.string().max(8000).optional(),
+            environment: zod_1.z.enum(["local", "staging", "production", "development"]).default("staging"),
+            status: zod_1.z.enum(["active", "inactive", "archived"]).default("active"),
+            confirm: zod_1.z.boolean().default(false),
+            idempotency_key: zod_1.z.string().min(8).max(128).optional(),
+        }),
+    }, async ({ name, website_url, description, environment, status, confirm, idempotency_key }) => {
+        const idem = replayOrConflict("testneo_create_web_project", idempotency_key, { name, website_url, description, environment, status });
+        if (idem.blocked)
+            return idem.blocked;
+        if (!deps.allowWriteTools) {
+            return result(asText({
+                message: "Write tools disabled. Set TESTNEO_MCP_ALLOW_WRITE=true to create a web project.",
+                would_create: { name, website_url, description, environment, status },
+            }));
+        }
+        if (!confirm) {
+            return result(asText({
+                message: "Preview only. Set confirm=true to create this web project.",
+                would_post: {
+                    path: "/api/web/v1/projects",
+                    body: {
+                        name,
+                        website_url,
+                        description,
+                        environment,
+                        status,
+                    },
+                },
+            }));
+        }
+        try {
+            const created = await client.request("/api/web/v1/projects", {
+                method: "POST",
+                body: {
+                    name,
+                    website_url,
+                    description,
+                    environment,
+                    status,
+                },
+            });
+            const wrapped = {
+                contract_version: "web_project_bootstrap.v1",
+                created_project: created,
+                recommended_next_tools: [
+                    "testneo_create_web_project_environment (default env + base_url variable for {{base_url}} in NLP)",
+                    "testneo_set_project_route_map (optional phrase→path hardening)",
+                    "testneo_figma_image_to_tests_workflow (PNG export, no Figma token) or testneo_swagger_upload_and_generate",
+                    "testneo_run_generated_test_pipeline (use test_case_id from generation preview or Swagger response)",
+                ],
+            };
+            const text = asText(wrapped);
+            if (idem.key && idem.fingerprint)
+                (0, idempotency_js_1.recordIdempotency)(idem.key, idem.fingerprint, text);
+            return result(text);
+        }
+        catch (e) {
+            const fmt = formatTestNeoApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_create_web_project_environment", {
+        description: "Create a named web project environment with optional variables (e.g. base_url for {{base_url}} in NLP). Backend: POST /api/web/v1/projects/{project_id}/environments. Guarded: allow-write + confirm=true.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+            name: zod_1.z.string().min(1).max(100),
+            is_default: zod_1.z.boolean().default(true),
+            is_active: zod_1.z.boolean().default(true),
+            variables: zod_1.z
+                .array(zod_1.z.object({
+                variable_name: zod_1.z.string().min(1).max(100),
+                variable_value: zod_1.z.string().min(1),
+                is_secret: zod_1.z.boolean().optional(),
+                variable_type: zod_1.z.string().max(50).optional(),
+            }))
+                .optional(),
+            confirm: zod_1.z.boolean().default(false),
+            idempotency_key: zod_1.z.string().min(8).max(128).optional(),
+        }),
+    }, async ({ project_id, name, is_default, is_active, variables, confirm, idempotency_key }) => {
+        const idem = replayOrConflict("testneo_create_web_project_environment", idempotency_key, {
+            project_id,
+            name,
+            is_default,
+            is_active,
+            variables,
+        });
+        if (idem.blocked)
+            return idem.blocked;
+        if (!deps.allowWriteTools) {
+            return result(asText({
+                message: "Write tools disabled. Set TESTNEO_MCP_ALLOW_WRITE=true to create environments.",
+                project_id,
+                would_create: { name, is_default, is_active, variables },
+            }));
+        }
+        if (!confirm) {
+            return result(asText({
+                message: "Preview only. Set confirm=true to create this environment.",
+                project_id,
+                would_post: {
+                    path: `/api/web/v1/projects/${project_id}/environments`,
+                    body: { name, is_default, is_active, variables: variables ?? [] },
+                },
+            }));
+        }
+        try {
+            const created = await client.request(`/api/web/v1/projects/${encodeURIComponent(String(project_id))}/environments`, {
+                method: "POST",
+                body: {
+                    name,
+                    is_default,
+                    is_active,
+                    variables: variables ?? [],
+                },
+            });
+            const text = asText({ contract_version: "web_project_bootstrap.v1", environment: created });
+            if (idem.key && idem.fingerprint)
+                (0, idempotency_js_1.recordIdempotency)(idem.key, idem.fingerprint, text);
+            return result(text);
+        }
+        catch (e) {
+            const fmt = formatTestNeoApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_bootstrap_web_mcp_project", {
+        description: "One-shot onboarding: validate → create web project → optional default environment with base_url variable. Returns a trace + recommended_next_tools for ingest → generate → testneo_run_generated_test_pipeline. Guarded like other writes.",
+        inputSchema: zod_1.z.object({
+            name: zod_1.z.string().min(1).max(255),
+            website_url: zod_1.z.string().url(),
+            description: zod_1.z.string().max(8000).optional(),
+            project_environment_name: zod_1.z.string().min(1).max(100).default("staging"),
+            add_base_url_variable: zod_1.z.boolean().default(true),
+            base_url_variable_name: zod_1.z.string().min(1).max(100).default("base_url"),
+            confirm: zod_1.z.boolean().default(false),
+            idempotency_key: zod_1.z.string().min(8).max(128).optional(),
+        }),
+    }, async ({ name, website_url, description, project_environment_name, add_base_url_variable, base_url_variable_name, confirm, idempotency_key, }) => {
+        const trace = [];
+        const idem = replayOrConflict("testneo_bootstrap_web_mcp_project", idempotency_key, {
+            name,
+            website_url,
+            description,
+            project_environment_name,
+            add_base_url_variable,
+            base_url_variable_name,
+        });
+        if (idem.blocked)
+            return idem.blocked;
+        if (!deps.allowWriteTools) {
+            trace.push({
+                step: "allow_write",
+                status: "blocked",
+                detail: "Set TESTNEO_MCP_ALLOW_WRITE=true to run bootstrap.",
+            });
+            return result(asText({
+                contract_version: "web_project_bootstrap.v1",
+                trace,
+                planned: { name, website_url, description, project_environment_name, add_base_url_variable },
+            }));
+        }
+        if (!confirm) {
+            trace.push({ step: "dry_run", status: "ok", detail: "Set confirm=true to execute." });
+            return result(asText({
+                contract_version: "web_project_bootstrap.v1",
+                trace,
+                preview: {
+                    create_project: {
+                        path: "/api/web/v1/projects",
+                        body: {
+                            name,
+                            website_url,
+                            description,
+                            environment: "staging",
+                            status: "active",
+                        },
+                    },
+                    create_environment: add_base_url_variable
+                        ? {
+                            path: "/api/web/v1/projects/{new_project_id}/environments",
+                            body: {
+                                name: project_environment_name,
+                                is_default: true,
+                                is_active: true,
+                                variables: [{ variable_name: base_url_variable_name, variable_value: website_url }],
+                            },
+                        }
+                        : null,
+                },
+                recommended_next_tools: [
+                    "testneo_bootstrap_web_mcp_project (confirm=true, same idempotency_key optional)",
+                    "testneo_list_projects",
+                    "testneo_figma_image_to_tests_workflow (PNG export, no Figma token)",
+                    "testneo_swagger_upload_and_generate",
+                    "testneo_figma_to_tests_workflow (Figma API token path)",
+                    "testneo_run_generated_test_pipeline",
+                ],
+            }));
+        }
+        try {
+            const v = await client.request("/api/web/v1/playwright-sdk/validate", {
+                method: "POST",
+            });
+            trace.push({ step: "validate_connection", status: "ok", detail: v });
+        }
+        catch (e) {
+            const fmt = formatTestNeoApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+        let project;
+        try {
+            project = await client.request("/api/web/v1/projects", {
+                method: "POST",
+                body: {
+                    name,
+                    website_url,
+                    description,
+                    environment: "staging",
+                    status: "active",
+                },
+            });
+            trace.push({ step: "create_web_project", status: "ok", detail: { id: project.id, name: project.name } });
+        }
+        catch (e) {
+            if (e instanceof httpClient_js_1.TestNeoApiError) {
+                trace.push({ step: "create_web_project", status: "error" });
+                let detail = e.body;
+                try {
+                    detail = JSON.parse(e.body);
+                }
+                catch {
+                    /* keep string */
+                }
+                return result(asText({
+                    contract_version: "web_project_bootstrap.v1",
+                    trace,
+                    error: "testneo_api_error",
+                    http_status: e.status,
+                    path: e.path,
+                    detail,
+                }));
+            }
+            throw e;
+        }
+        const pidRaw = project.id;
+        const project_id = typeof pidRaw === "number" ? pidRaw : Number(pidRaw);
+        if (!Number.isFinite(project_id) || project_id <= 0) {
+            return result(asText({
+                contract_version: "web_project_bootstrap.v1",
+                trace,
+                error: "bootstrap_invalid_response",
+                message: "Create project succeeded but response had no usable id.",
+                raw: project,
+            }));
+        }
+        let environment = null;
+        if (add_base_url_variable) {
+            try {
+                environment = await client.request(`/api/web/v1/projects/${encodeURIComponent(String(project_id))}/environments`, {
+                    method: "POST",
+                    body: {
+                        name: project_environment_name,
+                        is_default: true,
+                        is_active: true,
+                        variables: [{ variable_name: base_url_variable_name, variable_value: website_url }],
+                    },
+                });
+                trace.push({
+                    step: "create_environment",
+                    status: "ok",
+                    detail: { id: environment.id, name: environment.name },
+                });
+            }
+            catch (e) {
+                if (e instanceof httpClient_js_1.TestNeoApiError) {
+                    trace.push({
+                        step: "create_environment",
+                        status: "error",
+                        detail: "Environment creation failed — project exists; retry testneo_create_web_project_environment.",
+                    });
+                    let detail = e.body;
+                    try {
+                        detail = JSON.parse(e.body);
+                    }
+                    catch {
+                        /* keep string */
+                    }
+                    const payload = asText({
+                        contract_version: "web_project_bootstrap.v1",
+                        trace,
+                        project_id,
+                        partial_success: true,
+                        error: "testneo_api_error",
+                        http_status: e.status,
+                        path: e.path,
+                        detail,
+                    });
+                    if (idem.key && idem.fingerprint)
+                        (0, idempotency_js_1.recordIdempotency)(idem.key, idem.fingerprint, payload);
+                    return result(payload);
+                }
+                throw e;
+            }
+        }
+        else {
+            trace.push({ step: "create_environment", status: "skipped", detail: "add_base_url_variable=false" });
+        }
+        const wrapped = asText({
+            contract_version: "web_project_bootstrap.v1",
+            trace,
+            project_id,
+            project,
+            environment,
+            headline: "Web project ready for ingest + generation + execution.",
+            recommended_next_tools: [
+                `testneo_set_project_route_map (project_id=${project_id}, optional navigation hardening)`,
+                `testneo_figma_image_to_tests_workflow (PNG/JPEG export, no Figma token) or testneo_swagger_upload_and_generate (OpenAPI)`,
+                `testneo_figma_to_tests_workflow (only if you use a Figma API token + file id)`,
+                `testneo_run_generated_test_pipeline (test_case_id from generation preview or API)`,
+            ],
+        });
+        if (idem.key && idem.fingerprint)
+            (0, idempotency_js_1.recordIdempotency)(idem.key, idem.fingerprint, wrapped);
+        return result(wrapped);
+    });
     registerTracedTool("testneo_list_recent_executions", {
         description: "List recent executions, optionally filtered by project/status/release/build.",
         inputSchema: zod_1.z.object({
@@ -1586,7 +1957,7 @@ function registerTools(server, deps) {
         return result(`${leadLines.join("\n")}\n${asText(body)}`);
     });
     registerTracedTool("testneo_generate_tests_from_context", {
-        description: "Generate NLP test cases from an existing unified context (supports Figma-driven contexts). Resolve context via testneo_list_unified_contexts or testneo_get_unified_context_by_name. With default SauceDemo auth and no TESTNEO_ROUTE_MAP_JSON / profile, applies bundled SauceDemo route phrases (checkout overview → path) unless auto_align_saucedemo_route_map=false or route_hardening overrides. Full control: TESTNEO_ROUTE_PROFILE, TESTNEO_ROUTE_MAP_JSON, route_hardening.",
+        description: "Generate NLP test cases from an existing unified context (Figma, requirements, etc.). Resolve context via testneo_list_unified_contexts or testneo_get_unified_context_by_name (name_query, not scraped UI ids). Omit auth_preamble for public / no-login apps (default: no SauceDemo login injected, no SauceDemo route auto-align). Pass auth_preamble { enabled:true, preset:'saucedemo' } only for demos against saucedemo.com. Custom maps: TESTNEO_ROUTE_MAP_JSON or testneo_set_project_route_map; optional auto_align_saucedemo_route_map + SauceDemo preset ties route phrases to SauceDemo paths.",
         inputSchema: zod_1.z.object({
             project_id: zod_1.z.number().int().positive(),
             context_id: zod_1.z.number().int().positive(),
@@ -1605,16 +1976,20 @@ function registerTools(server, deps) {
                 preset: zod_1.z.enum(["saucedemo", "custom"]).default("saucedemo"),
                 commands: zod_1.z.array(zod_1.z.string().min(1)).optional(),
             })
-                .optional(),
+                .optional()
+                .describe("Omit entirely for generic sites (no login preamble). Use { enabled:false } to persist without auth lines. SauceDemo preset only for saucedemo.com demos."),
             persist_auth_preamble: zod_1.z.boolean().default(true),
             route_hardening: routeHardeningToolSchema,
             persist_route_hardening: zod_1.z.boolean().default(true),
             auto_align_saucedemo_route_map: zod_1.z.boolean().default(true),
         }),
     }, async ({ project_id, context_id, test_types, include_ui_tests, include_api_tests, include_e2e_flows, max_tests, max_tests_per_type, priority_threshold, relationship_depth, focus_areas, auth_preamble, persist_auth_preamble, route_hardening, persist_route_hardening, auto_align_saucedemo_route_map, }) => {
+        const wantsSauceLogin = !!auth_preamble &&
+            auth_preamble.enabled !== false &&
+            (auth_preamble.preset ?? "saucedemo") === "saucedemo";
         const blocked = await gateProjectExecutable(project_id, {
             toolName: "testneo_generate_tests_from_context",
-            authExpectation: auth_preamble?.enabled === false ? "optional" : "required",
+            authExpectation: wantsSauceLogin ? "required" : "optional",
         });
         if (blocked)
             return blocked;
@@ -1636,7 +2011,7 @@ function registerTools(server, deps) {
         const generated = generation.generated_test_cases || [];
         const authSteps = buildAuthPreamble(auth_preamble);
         let routeRuntime = await runtimeForProjectRouteMap(project_id, deps.routeHardening);
-        const authUsesSaucedemo = auth_preamble?.enabled !== false && (auth_preamble?.preset ?? "saucedemo") === "saucedemo";
+        const authUsesSaucedemo = wantsSauceLogin;
         if (auto_align_saucedemo_route_map &&
             authUsesSaucedemo &&
             routeRuntime.profile === "none" &&
@@ -2103,6 +2478,198 @@ function registerTools(server, deps) {
             },
             trace,
         }));
+    });
+    registerTracedTool("testneo_figma_image_to_tests_workflow", {
+        description: "No Figma token: upload exported UI image (PNG/JPEG/GIF/WebP) like the product 'Upload Figma Image' flow → wait for vision ETL → create unified context → generate tests → preview. Guarded: TESTNEO_MCP_ALLOW_WRITE + confirm=true. Backend: POST /api/web/v1/etl/upload-figma-image (multipart field: file).",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+            image_file_base64: zod_1.z.string().min(1),
+            image_filename: zod_1.z.string().min(1).max(512),
+            context_name: zod_1.z.string().min(3),
+            context_description: zod_1.z.string().optional(),
+            figma_json_id: zod_1.z.string().min(1).optional(),
+            enrich_context_id: zod_1.z.number().int().positive().optional(),
+            wait_for_vision: zod_1.z.boolean().default(true),
+            max_polls: zod_1.z.number().int().min(1).max(120).default(45),
+            poll_interval_ms: zod_1.z.number().int().min(500).max(10000).default(2000),
+            test_types: zod_1.z.array(zod_1.z.string().min(1)).default(["positive", "negative", "edge"]),
+            max_tests: zod_1.z.number().int().min(1).max(200).optional(),
+            preview_items: zod_1.z.number().int().min(1).max(10).default(3),
+            confirm: zod_1.z.boolean().default(false),
+            idempotency_key: zod_1.z.string().min(8).max(128).optional(),
+        }),
+    }, async ({ project_id, image_file_base64, image_filename, context_name, context_description, figma_json_id, enrich_context_id, wait_for_vision, max_polls, poll_interval_ms, test_types, max_tests, preview_items, confirm, idempotency_key, }) => {
+        const fnErr = validateFigmaImageFilename(image_filename);
+        if (fnErr) {
+            return result(asText({ contract_version: "figma_image_workflow.v1", success: false, error: fnErr }));
+        }
+        const dec = (0, swaggerIntel_js_1.decodeSwaggerUploadBase64)(image_file_base64);
+        if (!dec.ok) {
+            return result(asText({ contract_version: "figma_image_workflow.v1", success: false, error: dec.error }));
+        }
+        if (dec.buf.length > MAX_FIGMA_IMAGE_UPLOAD_BYTES) {
+            return result(asText({
+                contract_version: "figma_image_workflow.v1",
+                success: false,
+                error: `Image exceeds ${MAX_FIGMA_IMAGE_UPLOAD_BYTES} bytes (product limit ~10MB).`,
+            }));
+        }
+        const idem = replayOrConflict("testneo_figma_image_to_tests_workflow", idempotency_key, {
+            project_id,
+            image_sha256: dec.sha256,
+            image_filename: image_filename.trim(),
+            context_name,
+            figma_json_id: figma_json_id ?? null,
+            enrich_context_id: enrich_context_id ?? null,
+        });
+        if (idem.blocked)
+            return idem.blocked;
+        if (!deps.allowWriteTools) {
+            return result(asText({
+                contract_version: "figma_image_workflow.v1",
+                message: "Write tools disabled. Set TESTNEO_MCP_ALLOW_WRITE=true to upload images and generate tests.",
+                project_id,
+                image_sha256: dec.sha256,
+                image_bytes: dec.buf.length,
+            }));
+        }
+        if (!confirm) {
+            return result(asText({
+                contract_version: "figma_image_workflow.v1",
+                mode: "preview",
+                message: "Set confirm=true to POST /api/web/v1/etl/upload-figma-image and run context + generate-tests.",
+                project_id,
+                image_filename: image_filename.trim(),
+                image_bytes: dec.buf.length,
+                image_sha256: dec.sha256,
+                would_post: {
+                    path: "/api/web/v1/etl/upload-figma-image",
+                    query: {
+                        project_id,
+                        ...(figma_json_id ? { figma_json_id } : {}),
+                        ...(enrich_context_id != null ? { context_id: enrich_context_id } : {}),
+                    },
+                    multipart_field: "file",
+                },
+                then: "Poll GET /api/v1/etl/jobs/{jobId} → POST unified-context with selected_document_ids [\"etl-{jobId}\"] → POST generate-tests",
+            }));
+        }
+        const blockedProject = await gateProjectExecutable(project_id, {
+            toolName: "testneo_figma_image_to_tests_workflow",
+        });
+        if (blockedProject)
+            return blockedProject;
+        const trace = [];
+        const mime = mimeForImageFilename(image_filename);
+        const fileBlob = new Blob([new Uint8Array(dec.buf)], { type: mime });
+        const form = new FormData();
+        form.append("file", fileBlob, image_filename.trim());
+        const qs = new URLSearchParams({ project_id: String(project_id) });
+        if (figma_json_id)
+            qs.set("figma_json_id", figma_json_id);
+        if (enrich_context_id != null)
+            qs.set("context_id", String(enrich_context_id));
+        let upload;
+        try {
+            upload = await client.requestMultipart(`/api/web/v1/etl/upload-figma-image?${qs.toString()}`, form, client.longRequestTimeoutMs);
+        }
+        catch (e) {
+            const fmt = formatTestNeoApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+        const jobIdRaw = upload.jobId ?? upload.job_id;
+        const jobId = jobIdRaw != null ? String(jobIdRaw) : "";
+        if (!jobId) {
+            return result(asText({
+                contract_version: "figma_image_workflow.v1",
+                success: false,
+                error: "upload_missing_jobId",
+                upload,
+            }));
+        }
+        trace.push({ step: "upload_figma_image", status: "ok", detail: `jobId=${jobId}` });
+        let etlJob = { id: jobId, status: upload.status };
+        if (wait_for_vision) {
+            etlJob = await waitForEtlJobCompletion(client, jobId, max_polls, poll_interval_ms);
+            trace.push({ step: "wait_etl_job", status: "ok", detail: `status=${etlJob.status ?? "unknown"}` });
+            const st = normalizeStatus(etlJob.status);
+            if (st === "failed") {
+                return result(asText({
+                    contract_version: "figma_image_workflow.v1",
+                    trace,
+                    project_id,
+                    etl_job: etlJob,
+                    error: "vision_etl_failed",
+                    message: String(etlJob.error_message ?? etlJob.detail ?? "ETL job failed"),
+                }));
+            }
+        }
+        const context = await client.request(`/api/v1/web/v1/projects/${encodeURIComponent(String(project_id))}/unified-contexts`, {
+            method: "POST",
+            body: {
+                name: context_name,
+                description: context_description || `Figma image context for job ${jobId}`,
+                context_type: "unified",
+                selected_document_ids: [`etl-${jobId}`],
+            },
+        });
+        trace.push({ step: "create_unified_context", status: "ok", detail: `context_id=${context.id ?? "unknown"}` });
+        const generation = await client.request(`/api/v1/web/v1/projects/${encodeURIComponent(String(project_id))}/unified-contexts/${encodeURIComponent(String(context.id))}/generate-tests`, {
+            method: "POST",
+            body: {
+                selected_entity_ids: [],
+                test_types,
+                include_ui_tests: true,
+                include_api_tests: true,
+                include_e2e_flows: true,
+                max_tests,
+                max_tests_per_type: 5,
+                priority_threshold: 0.3,
+                relationship_depth: 2,
+            },
+            timeoutMs: client.longRequestTimeoutMs,
+        });
+        trace.push({
+            step: "generate_tests",
+            status: "ok",
+            detail: `count=${generation.total_tests_generated ?? 0}`,
+        });
+        const generated = generation.generated_test_cases || [];
+        const preview = generated.slice(0, preview_items).map((t, idx) => {
+            const name = String(t.name ?? t.test_name ?? `Generated Test ${idx + 1}`);
+            const nlp = extractNlpCommandsFromGeneratedTest(t);
+            return {
+                id: t.id ?? t.test_case_id ?? null,
+                name,
+                nlp_commands: nlp,
+                playwright_spec_ts: buildPlaywrightSpecTs(name, nlp),
+            };
+        });
+        const wrapped = asText({
+            contract_version: "figma_image_workflow.v1",
+            project_id,
+            etl_job_id: jobId,
+            unified_context: {
+                id: context.id ?? null,
+                name: context.name ?? context_name,
+                entity_count: context.entity_count ?? 0,
+            },
+            generation_summary: {
+                generation_id: generation.generation_id ?? null,
+                total_tests_generated: generation.total_tests_generated ?? generated.length,
+                message: generation.message ?? "",
+            },
+            preview,
+            human_in_loop: {
+                approve_then_execute_with: "testneo_run_generated_test_pipeline(test_case_id, confirm=true)",
+            },
+            trace,
+        });
+        if (idem.key && idem.fingerprint)
+            (0, idempotency_js_1.recordIdempotency)(idem.key, idem.fingerprint, wrapped);
+        return result(wrapped);
     });
     registerTracedTool("testneo_rerun_failed", {
         description: "Rerun failed tests for a project using test-case execute endpoint (guarded write action).",

@@ -11,8 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Public mirror sync script: `scripts/sync-public-mcp-repo.sh`.
 - `SECURITY.md`, `CHANGELOG.md`, and GPLv3 `LICENSE` in-package.
 - Bundled `docs/MCP_TOOL_REFERENCE.md` (mirrors the main TestNeo API repo’s `docs/mcp-tool-reference.md` for self-contained publishing).
+- **`.npmrc`** (`audit=false`, `fund=false`, `progress=false`) — fewer install stalls / prompts.
+- **`docs/MCP_NON_SAUCE_DEMO_TESTING.md`** and monorepo **`docs/mcp-non-saucedemo-testing.md`**; README troubleshooting for slow install.
 
 ### Changed
+- **`package.json`:** replaced **`prepare`** (clean + build on every `npm install`) with **`prepublishOnly`** so local/CI installs no longer spawn a heavy compile by default (`npm publish` still builds).
+- **`testneo_generate_tests_from_context`:** omitting **`auth_preamble`** no longer implies Sauce Demo (no login injection; no Sauce phrase-map auto-align; env credential check optional unless explicit `preset: "saucedemo"`).
 - `testneo_execute_generated_test_case` / `testneo_run_generated_test_pipeline`: optional `environment_id` / `environment_name` for execution requests.
 - `testneo_run_generated_test_pipeline`: project trend fallback when execution payloads omit `project_id`.
 - Mirror scripts: usage text uses concrete example path `$HOME/Documents/testneo-mcp` instead of generic `/path/to/...` placeholders.

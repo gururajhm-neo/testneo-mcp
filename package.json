@@ -17,6 +17,8 @@
     "dist",
     "README.md",
     "docs",
+    ".npmrc",
+    ".env.example",
     "LICENSE",
     "SECURITY.md",
     "CHANGELOG.md",
@@ -28,7 +30,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
-    "prepare": "npm run clean && npm run build",
+    "prepublishOnly": "npm run build",
     "pretest": "npm run build",
     "test": "node scripts/route-hardening-check.mjs && node scripts/unified-context-discovery-check.mjs && node scripts/project-preconditions-check.mjs && node scripts/tool-telemetry-check.mjs && node scripts/project-route-map-check.mjs && node scripts/execution-contracts-check.mjs && node scripts/policy-engine-check.mjs && node scripts/idempotency-check.mjs && node scripts/swagger-intel-check.mjs",
     "smoke": "node dist/smoke.js"
