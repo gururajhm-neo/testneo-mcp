@@ -57,9 +57,9 @@ These require write enablement + confirmation where `confirm` is supported:
 
 | Tool | Notes |
 | --- | --- |
-| `testneo_create_web_project` | `POST /api/web/v1/projects`; requires real **`website_url`** (stored as executable base URL). |
-| `testneo_create_web_project_environment` | `POST /api/web/v1/projects/{id}/environments`; optional **`variables`** (e.g. `base_url` for `{{base_url}}`). |
-| `testneo_bootstrap_web_mcp_project` | Validates → creates project → default env + `base_url` variable; returns **`contract_version: web_project_bootstrap.v1`**. |
+| `testneo_create_web_project` | `POST /api/web/v1/projects`; requires **`website_url`**. MCP sends **`create_default_environment`** (default **true**), optional **`initial_environment`**, **`environment_username`** / **`environment_password`**, **`project_environment_name`**, **`base_url_variable_name`** — **single transaction** when the API supports the extended schema. Otherwise create env with **`testneo_create_web_project_environment`**. New projects: **`lighthouse_enabled`** default **true** when the API includes that merge. |
+| `testneo_create_web_project_environment` | `POST /api/web/v1/projects/{id}/environments`; **`variables`** array (`base_url`, `username`, `password` with **`is_secret: true`** on password). Use as **fallback** if inline create did not persist env rows. |
+| `testneo_bootstrap_web_mcp_project` | Validates → **`POST /api/web/v1/projects`** with optional inline default env + **`base_url`** (and optional credentials) when **`add_base_url_variable`** is true; returns **`contract_version: web_project_bootstrap.v1`**. |
 | `testneo_execute_generated_test_case` | Optional **`environment_id`** / **`environment_name`**. |
 | `testneo_run_generated_test_pipeline` | Preferred full run + report (`contract_version: execution_pipeline.v1`). Same env options. |
 | `testneo_rerun_failed` | |

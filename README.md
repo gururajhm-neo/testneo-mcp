@@ -11,24 +11,23 @@
 
 ---
 
-## Get started (production)
+## Get started
 
 ### 1) Create a TestNeo account and project
 
-1. Open **[app.testneo.ai/signup](https://app.testneo.ai/signup)** and register.
-2. In the app, **create a project** (web/API automation) and note the **project id** when you run workflows from chat.
-3. Open your account/API settings and **create an API key** (`tn_…`). Treat it like a password.
+1. Open **[app.testneo.ai/signup](https://app.testneo.ai/signup)** and register (or use your self-hosted deployment).
+2. **Recommended:** validate **locally** first — run this monorepo’s API, set **`TESTNEO_BASE_URL`** to that origin (e.g. `http://127.0.0.1:8000`), and point MCP at **`packages/testneo-mcp-server/dist/index.js`** after `npm run build` so **project + environment + credentials** match what you will ship to prod.
+3. Note the **project id** when you run workflows from chat. You can create the web project from MCP (**`testneo_bootstrap_web_mcp_project`** or **`testneo_create_web_project`**) when **`TESTNEO_MCP_ALLOW_WRITE=true`** — full flow (inline env, credentials, API compatibility, Lighthouse): [MCP quickstart](../../docs/mcp-quickstart.md) **section 4** (from the **testneo-api** monorepo root).
+4. Open account/API settings and **create an API key** (`tn_…`). Treat it like a password.
 
-### 2) Point the MCP server at TestNeo Cloud
-
-Use the **production API base URL**:
+### 2) Point the MCP server at your API
 
 | Variable | Value |
 |----------|--------|
-| `TESTNEO_BASE_URL` | **`https://app.testneo.ai`** |
+| `TESTNEO_BASE_URL` | **TestNeo Cloud:** **`https://app.testneo.ai`**. **Local / self-hosted:** origin that serves **`/api/web/v1`** (e.g. `http://127.0.0.1:8000`). |
 | `TESTNEO_API_KEY` | your `tn_…` key |
 
-Self-hosted customers can set `TESTNEO_BASE_URL` to their own API origin instead.
+Use **`127.0.0.1`** instead of `localhost` if Cursor or `npx` hits proxy issues ([monorepo troubleshooting](../../docs/mcp-troubleshooting.md)).
 
 ### 3) Add the server to your IDE (recommended: `npx`)
 
@@ -61,7 +60,7 @@ Keep **`TESTNEO_MCP_ALLOW_WRITE`** at **`false`** until you intentionally want e
 | **`idempotency_key`** | Optional (**≥ 8** chars when set): dedupes retries so the same logical action is not applied twice. |
 | **`environment_name` / `environment_id`** | On execution tools: which **project environment** supplies `{{base_url}}` and credentials (must match TestNeo UI). |
 
-**Guardrails (full table + install):** when developing inside **testneo-api**, see [docs/mcp-quickstart.md](../../docs/mcp-quickstart.md) (includes **§7 NLP API from Swagger**) and [customer E2E playbook](../../docs/mcp-customer-e2e-playbook.md#part-f-swagger-api-nlp-flow). For the **standalone npm/GitHub** package only, use [TestNeo MCP docs](https://testneo.ai/docs/testneo-mcp.html) (same content when published).
+**Guardrails (full table + install):** when developing inside **testneo-api**, see [docs/mcp-quickstart.md](../../docs/mcp-quickstart.md) (includes **NLP API from Swagger**, section 7) and [customer E2E playbook](../../docs/mcp-customer-e2e-playbook.md#part-f-swagger-api-nlp-flow). For the **standalone npm/GitHub** package only, use [TestNeo MCP docs](https://testneo.ai/docs/testneo-mcp.html) (same content when published).
 
 ### 4) Reload MCP and verify
 
