@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { HttpClient, TestNeoApiError } from "../httpClient.js";
+import { summarizeTestNeoHttpError } from "../apiErrorHints.js";
 import {
   buildProjectSettingsWithRouteMap,
   parseProjectRouteConfig,
@@ -146,7 +147,21 @@ function formatTestNeoApiFailure(e: unknown): ToolTextResult | null {
   } catch {
     /* keep raw string */
   }
-  return result(asText({ error: "testneo_api_error", http_status: e.status, path: e.path, detail }));
+  const hint = summarizeTestNeoHttpError(e.status, e.body);
+  const payload: Record<string, unknown> = {
+    error: "testneo_api_error",
+    http_status: e.status,
+    path: e.path,
+    detail,
+  };
+  if (hint) {
+    payload.mcp_client_summary = hint;
+  }
+  const jsonBlock = asText(payload);
+  const text = hint
+    ? `### TestNeo API blocked this action (HTTP ${e.status})\n\n${hint}\n\n---\n\n${jsonBlock}`
+    : jsonBlock;
+  return result(text);
 }
 
 function compactExecution(items: ExecutionListItem[]): string {

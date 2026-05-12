@@ -76,7 +76,7 @@ List my TestNeo projects
 
 ### 5) Go deeper
 
-Follow **[TestNeo MCP — Docs](https://testneo.ai/docs/testneo-mcp.html)** for quickstart detail, **tool reference**, **workflows** (e.g. `qa_intelligence_workflow`), and **troubleshooting**. This repo’s **`docs/MCP_TOOL_REFERENCE.md`** mirrors the same tool list for offline browsing.
+Follow **[TestNeo MCP — Docs](https://testneo.ai/docs/testneo-mcp.html)** for quickstart detail, **tool reference**, **workflows** (e.g. `qa_intelligence_workflow`), and **troubleshooting**. In the **testneo-api** monorepo, the canonical Markdown is **`docs/mcp-tool-reference.md`** (mirrored into this package as **`docs/MCP_TOOL_REFERENCE.md`** before publish).
 
 ---
 
@@ -120,7 +120,7 @@ See **`docs/IDE_SETUP.md`** for more client-specific notes.
 ## Responses & contracts
 
 - Tool responses include **`_telemetry`** (`request_id`, `duration_ms`, `backend_paths`, etc.) for support and auditing.
-- **`testneo_get_failure_bundle`** (and triage-heavy **`testneo_run_agent_workflow`** steps) may include **`suggested_nlp_patch`** when **`include_nlp_patch_suggestion`** is true (default). Details: **`docs/MCP_TOOL_REFERENCE.md`**.
+- **`testneo_get_failure_bundle`** (and triage-heavy **`testneo_run_agent_workflow`** steps) may include **`suggested_nlp_patch`** when **`include_nlp_patch_suggestion`** is true (default). Details: **[`docs/MCP_TOOL_REFERENCE.md`](./docs/MCP_TOOL_REFERENCE.md)** (same content as monorepo **`docs/mcp-tool-reference.md`**).
 - **Project execution preconditions (default on):** generate/execute-style tools may return **`project_precondition_failed`** unless the project resolves a real **https** base URL for the app under test (`website_url` or environment `base_url`). **`example.com`** placeholders are rejected. For special dev setups only: **`TESTNEO_MCP_RELAX_PROJECT_PRECONDITIONS=true`**.
 - **Execution intelligence:** normalized payloads use **`contract_version: execution_intelligence.v1`** (or pipeline variants) and **`canonical_status`** (`queued` \| `running` \| `passed` \| `failed` \| `cancelled` \| `unknown`) alongside raw backend status.
 
@@ -132,7 +132,7 @@ Read-heavy: connection, projects, executions, logs, trends, watch, failure bundl
 
 Writes (guarded): execute generated test, **`testneo_run_generated_test_pipeline`** (run + wait + report), rerun failed, trigger Playwright, Swagger upload/impact, NLP updates, route map persist, Figma ingest, etc.
 
-Full list: **`docs/MCP_TOOL_REFERENCE.md`** or [hosted tool reference](https://testneo.ai/docs/testneo-mcp.html).
+Full list: **[`docs/MCP_TOOL_REFERENCE.md`](./docs/MCP_TOOL_REFERENCE.md)** (synced from monorepo **`docs/mcp-tool-reference.md`**) or [hosted tool reference](https://testneo.ai/docs/testneo-mcp.html).
 
 ---
 

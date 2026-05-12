@@ -1,6 +1,6 @@
 # TestNeo MCP Tool Reference
 
-The TestNeo MCP server (`packages/testneo-mcp-server`) exposes **37** tools, all prefixed with `testneo_`. This page is the public copy; the package also ships [MCP_TOOL_REFERENCE.md](../packages/testneo-mcp-server/docs/MCP_TOOL_REFERENCE.md) (kept in sync with this file).
+**Canonical document** (for **testneo.ai** / marketing / git): **`docs/mcp-tool-reference.md`** in the TestNeo API monorepo. The MCP server in **`packages/testneo-mcp-server`** exposes **37** tools, all prefixed with `testneo_`. The **`@testneo/mcp-server`** npm package ships the **same** Markdown as **`packages/testneo-mcp-server/docs/MCP_TOOL_REFERENCE.md`** — copy from this file before publish (see **Website and npm package sync** at the end of this page).
 
 **Agent workflows:** `qa_intelligence_workflow`, `triage_failure_workflow`, and `rerun_decision_workflow` are **not** separate tool names. They are values of **`workflow_type`** on **`testneo_run_agent_workflow`** (see [Agent workflow tool](#agent-workflow-tool-testneo_run_agent_workflow)).
 
@@ -152,6 +152,12 @@ Heuristics are conservative (route hardening, optional short wait for timeout th
 ## Project execution preconditions (executable base URL)
 
 **Default:** before **`testneo_generate_tests_from_context`**, **`testneo_figma_to_tests_workflow`**, and any **confirmed** execution on **`testneo_execute_generated_test_case`**, **`testneo_run_generated_test_pipeline`**, **`testneo_run_playwright_spec_preview`**, **`testneo_rerun_failed`**, or **`testneo_trigger_playwright_execution`**, the server loads the project (and, if needed, **web environments**) and requires a resolvable **http(s)** base URL. Failures return JSON with **`error: "project_precondition_failed"`**, **`precondition_code`**, and **`remediation`** (agent-actionable).
+
+**Web environments HTTP (used by MCP preconditions and policy):**
+
+- **`GET /api/web/v1/projects/{project_id}/environments`** — returns an array of environments; each item includes **`variables`** (`variable_name`, `variable_value`, `is_secret`, …) so **`base_url`**, **`username`**, and **`password`** can be resolved for `{{base_url}}` and auth checks.
+- **`POST /api/web/v1/projects/{project_id}/environments`** — creates an environment plus optional **`variables`**; response follows **`WebProjectEnvironmentResponse`** (includes populated **`variables`**).
+- When the API supports extended **`POST /api/web/v1/projects`** bodies, **`testneo_create_web_project`** (MCP default **`create_default_environment: true`**) and **`testneo_bootstrap_web_mcp_project`** can create the **first** environment in the **same** transaction as the project; if the server ignores unknown fields, use **`testneo_create_web_project_environment`** as a second call (see guarded tools table above).
 
 **Escape hatch (not for prod):** **`TESTNEO_MCP_RELAX_PROJECT_PRECONDITIONS=true`**.
 
@@ -305,4 +311,16 @@ Matches names like **`Figma — Checkout flow`** when you query `"figma checkout
   "confirm": true
 }
 ```
+
+---
+
+## Website and npm package sync
+
+| Audience | File to use |
+|----------|-------------|
+| **Hosted docs (testneo.ai)** | Publish from monorepo **`docs/mcp-tool-reference.md`** (this canonical file). |
+| **npm package `@testneo/mcp-server`** | Before release, copy this file to **`packages/testneo-mcp-server/docs/MCP_TOOL_REFERENCE.md`** (see `packages/testneo-mcp-server/scripts/sync-public-mcp-repo.sh` or `scripts/push-public-mirror-local.sh` in that package). |
+| **GitHub mirror** | Same content as the package doc; CI in `.github/workflows/sync-mcp-public-mirror.yml` watches **`docs/mcp-tool-reference.md`**. |
+
+Keeping **one** source of truth (`docs/mcp-tool-reference.md`) avoids drift between the website, npm README, and MCP server bundle.
 

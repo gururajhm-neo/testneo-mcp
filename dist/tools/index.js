@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerTools = registerTools;
 const zod_1 = require("zod");
 const httpClient_js_1 = require("../httpClient.js");
+const apiErrorHints_js_1 = require("../apiErrorHints.js");
 const projectRouteMap_js_1 = require("../projectRouteMap.js");
 const routeHardening_js_1 = require("../routeHardening.js");
 const unifiedContextDiscovery_js_1 = require("../unifiedContextDiscovery.js");
@@ -118,7 +119,21 @@ function formatTestNeoApiFailure(e) {
     catch {
         /* keep raw string */
     }
-    return result(asText({ error: "testneo_api_error", http_status: e.status, path: e.path, detail }));
+    const hint = (0, apiErrorHints_js_1.summarizeTestNeoHttpError)(e.status, e.body);
+    const payload = {
+        error: "testneo_api_error",
+        http_status: e.status,
+        path: e.path,
+        detail,
+    };
+    if (hint) {
+        payload.mcp_client_summary = hint;
+    }
+    const jsonBlock = asText(payload);
+    const text = hint
+        ? `### TestNeo API blocked this action (HTTP ${e.status})\n\n${hint}\n\n---\n\n${jsonBlock}`
+        : jsonBlock;
+    return result(text);
 }
 function compactExecution(items) {
     if (!items.length)
