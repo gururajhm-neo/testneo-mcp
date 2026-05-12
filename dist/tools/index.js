@@ -1213,61 +1213,129 @@ function registerTools(server, deps) {
         return result(`Total projects: ${response.total ?? response.projects?.length ?? 0}\n${summary || "No projects."}`);
     });
     registerTracedTool("testneo_create_web_project", {
-        description: "Create a new web automation project (stored under your API key account). Mirrors POST /api/web/v1/projects. Guarded: TESTNEO_MCP_ALLOW_WRITE=true and confirm=true. Send a real executable base URL (website_url or target_url).",
+        description: "Create a new web automation project (stored under your API key account). Mirrors POST /api/web/v1/projects. Guarded: TESTNEO_MCP_ALLOW_WRITE=true and confirm=true. By default creates a default web environment with base_url (and optional username/password variables) in the same request; set create_default_environment=false for project-only. New projects get Lighthouse performance audits enabled unless project_settings overrides.",
         inputSchema: zod_1.z.object({
             name: zod_1.z.string().min(1).max(255),
             website_url: zod_1.z.string().url().describe("HTTPS/HTTP origin for the site under test"),
             description: zod_1.z.string().max(8000).optional(),
             environment: zod_1.z.enum(["local", "staging", "production", "development"]).default("staging"),
             status: zod_1.z.enum(["active", "inactive", "archived"]).default("active"),
+            project_environment_name: zod_1.z.string().min(1).max(100).default("staging"),
+            base_url_variable_name: zod_1.z.string().min(1).max(100).default("base_url"),
+            create_default_environment: zod_1.z
+                .boolean()
+                .default(true)
+                .describe("When true (default), creates the first web environment with base_url (and credentials if provided) in the same API call."),
+            environment_username: zod_1.z.string().min(1).max(500).optional(),
+            environment_password: zod_1.z.string().min(1).max(8192).optional(),
             confirm: zod_1.z.boolean().default(false),
             idempotency_key: zod_1.z.string().min(8).max(128).optional(),
         }),
-    }, async ({ name, website_url, description, environment, status, confirm, idempotency_key }) => {
-        const idem = replayOrConflict("testneo_create_web_project", idempotency_key, { name, website_url, description, environment, status });
+    }, async ({ name, website_url, description, environment, status, project_environment_name, base_url_variable_name, create_default_environment, environment_username, environment_password, confirm, idempotency_key, }) => {
+        const idem = replayOrConflict("testneo_create_web_project", idempotency_key, {
+            name,
+            website_url,
+            description,
+            environment,
+            status,
+            project_environment_name,
+            base_url_variable_name,
+            create_default_environment,
+            environment_username: environment_username ?? null,
+            environment_password: environment_password ? "***" : null,
+        });
         if (idem.blocked)
             return idem.blocked;
         if (!deps.allowWriteTools) {
             return result(asText({
                 message: "Write tools disabled. Set TESTNEO_MCP_ALLOW_WRITE=true to create a web project.",
-                would_create: { name, website_url, description, environment, status },
-            }));
-        }
-        if (!confirm) {
-            return result(asText({
-                message: "Preview only. Set confirm=true to create this web project.",
-                would_post: {
-                    path: "/api/web/v1/projects",
-                    body: {
-                        name,
-                        website_url,
-                        description,
-                        environment,
-                        status,
-                    },
-                },
-            }));
-        }
-        try {
-            const created = await client.request("/api/web/v1/projects", {
-                method: "POST",
-                body: {
+                would_create: {
                     name,
                     website_url,
                     description,
                     environment,
                     status,
+                    project_environment_name,
+                    base_url_variable_name,
+                    create_default_environment,
+                    environment_username: environment_username ?? null,
+                    environment_password: environment_password ? "***" : null,
                 },
+            }));
+        }
+        if (!confirm) {
+            const previewBody = {
+                name,
+                website_url,
+                description,
+                environment,
+                status,
+                create_default_environment,
+                environment_username: environment_username ?? undefined,
+                environment_password: environment_password ? "***" : undefined,
+            };
+            if (create_default_environment) {
+                previewBody.initial_environment = {
+                    name: project_environment_name,
+                    is_default: true,
+                    is_active: true,
+                    variables: base_url_variable_name !== "base_url"
+                        ? [{ variable_name: base_url_variable_name, variable_value: website_url }]
+                        : [],
+                };
+            }
+            return result(asText({
+                message: "Preview only. Set confirm=true to create this web project.",
+                would_post: {
+                    path: "/api/web/v1/projects",
+                    body: previewBody,
+                },
+            }));
+        }
+        try {
+            const body = {
+                name,
+                website_url,
+                description,
+                environment,
+                status,
+                create_default_environment,
+            };
+            if (environment_username !== undefined && environment_username !== "") {
+                body.environment_username = environment_username;
+            }
+            if (environment_password !== undefined && environment_password !== "") {
+                body.environment_password = environment_password;
+            }
+            if (create_default_environment) {
+                body.initial_environment = {
+                    name: project_environment_name,
+                    is_default: true,
+                    is_active: true,
+                    variables: base_url_variable_name !== "base_url"
+                        ? [{ variable_name: base_url_variable_name, variable_value: website_url }]
+                        : [],
+                };
+            }
+            const created = await client.request("/api/web/v1/projects", {
+                method: "POST",
+                body,
             });
             const wrapped = {
                 contract_version: "web_project_bootstrap.v1",
                 created_project: created,
-                recommended_next_tools: [
-                    "testneo_create_web_project_environment (default env + base_url variable for {{base_url}} in NLP)",
-                    "testneo_set_project_route_map (optional phrase→path hardening)",
-                    "testneo_figma_image_to_tests_workflow (PNG export, no Figma token) or testneo_swagger_upload_and_generate",
-                    "testneo_run_generated_test_pipeline (use test_case_id from generation preview or Swagger response)",
-                ],
+                recommended_next_tools: create_default_environment
+                    ? [
+                        "testneo_set_project_route_map (optional phrase→path hardening)",
+                        "testneo_figma_image_to_tests_workflow (PNG export, no Figma token) or testneo_swagger_upload_and_generate",
+                        "testneo_run_generated_test_pipeline (use test_case_id from generation preview or Swagger response)",
+                    ]
+                    : [
+                        "testneo_create_web_project_environment (default env + base_url variable for {{base_url}} in NLP)",
+                        "testneo_set_project_route_map (optional phrase→path hardening)",
+                        "testneo_figma_image_to_tests_workflow (PNG export, no Figma token) or testneo_swagger_upload_and_generate",
+                        "testneo_run_generated_test_pipeline (use test_case_id from generation preview or Swagger response)",
+                    ],
             };
             const text = asText(wrapped);
             if (idem.key && idem.fingerprint)
@@ -1349,7 +1417,7 @@ function registerTools(server, deps) {
         }
     });
     registerTracedTool("testneo_bootstrap_web_mcp_project", {
-        description: "One-shot onboarding: validate → create web project → optional default environment with base_url variable. Returns a trace + recommended_next_tools for ingest → generate → testneo_run_generated_test_pipeline. Guarded like other writes.",
+        description: "One-shot onboarding: validate → create web project with optional default environment (base_url + credentials) in a single POST when add_base_url_variable=true. Returns a trace + recommended_next_tools. Guarded like other writes.",
         inputSchema: zod_1.z.object({
             name: zod_1.z.string().min(1).max(255),
             website_url: zod_1.z.string().url(),
@@ -1357,10 +1425,12 @@ function registerTools(server, deps) {
             project_environment_name: zod_1.z.string().min(1).max(100).default("staging"),
             add_base_url_variable: zod_1.z.boolean().default(true),
             base_url_variable_name: zod_1.z.string().min(1).max(100).default("base_url"),
+            environment_username: zod_1.z.string().min(1).max(500).optional(),
+            environment_password: zod_1.z.string().min(1).max(8192).optional(),
             confirm: zod_1.z.boolean().default(false),
             idempotency_key: zod_1.z.string().min(8).max(128).optional(),
         }),
-    }, async ({ name, website_url, description, project_environment_name, add_base_url_variable, base_url_variable_name, confirm, idempotency_key, }) => {
+    }, async ({ name, website_url, description, project_environment_name, add_base_url_variable, base_url_variable_name, environment_username, environment_password, confirm, idempotency_key, }) => {
         const trace = [];
         const idem = replayOrConflict("testneo_bootstrap_web_mcp_project", idempotency_key, {
             name,
@@ -1369,6 +1439,8 @@ function registerTools(server, deps) {
             project_environment_name,
             add_base_url_variable,
             base_url_variable_name,
+            environment_username: environment_username ?? null,
+            environment_password: environment_password ? "***" : null,
         });
         if (idem.blocked)
             return idem.blocked;
@@ -1381,36 +1453,51 @@ function registerTools(server, deps) {
             return result(asText({
                 contract_version: "web_project_bootstrap.v1",
                 trace,
-                planned: { name, website_url, description, project_environment_name, add_base_url_variable },
+                planned: {
+                    name,
+                    website_url,
+                    description,
+                    project_environment_name,
+                    add_base_url_variable,
+                    environment_username: environment_username ?? null,
+                    environment_password: environment_password ? "***" : null,
+                },
             }));
         }
         if (!confirm) {
             trace.push({ step: "dry_run", status: "ok", detail: "Set confirm=true to execute." });
+            const bootstrapProjectBody = {
+                name,
+                website_url,
+                description,
+                environment: "staging",
+                status: "active",
+                create_default_environment: add_base_url_variable,
+            };
+            if (environment_username !== undefined && environment_username !== "") {
+                bootstrapProjectBody.environment_username = environment_username;
+            }
+            if (environment_password !== undefined && environment_password !== "") {
+                bootstrapProjectBody.environment_password = "***";
+            }
+            if (add_base_url_variable) {
+                bootstrapProjectBody.initial_environment = {
+                    name: project_environment_name,
+                    is_default: true,
+                    is_active: true,
+                    variables: base_url_variable_name !== "base_url"
+                        ? [{ variable_name: base_url_variable_name, variable_value: website_url }]
+                        : [],
+                };
+            }
             return result(asText({
                 contract_version: "web_project_bootstrap.v1",
                 trace,
                 preview: {
                     create_project: {
                         path: "/api/web/v1/projects",
-                        body: {
-                            name,
-                            website_url,
-                            description,
-                            environment: "staging",
-                            status: "active",
-                        },
+                        body: bootstrapProjectBody,
                     },
-                    create_environment: add_base_url_variable
-                        ? {
-                            path: "/api/web/v1/projects/{new_project_id}/environments",
-                            body: {
-                                name: project_environment_name,
-                                is_default: true,
-                                is_active: true,
-                                variables: [{ variable_name: base_url_variable_name, variable_value: website_url }],
-                            },
-                        }
-                        : null,
                 },
                 recommended_next_tools: [
                     "testneo_bootstrap_web_mcp_project (confirm=true, same idempotency_key optional)",
@@ -1436,15 +1523,33 @@ function registerTools(server, deps) {
         }
         let project;
         try {
+            const bootstrapProjectBody = {
+                name,
+                website_url,
+                description,
+                environment: "staging",
+                status: "active",
+                create_default_environment: add_base_url_variable,
+            };
+            if (environment_username !== undefined && environment_username !== "") {
+                bootstrapProjectBody.environment_username = environment_username;
+            }
+            if (environment_password !== undefined && environment_password !== "") {
+                bootstrapProjectBody.environment_password = environment_password;
+            }
+            if (add_base_url_variable) {
+                bootstrapProjectBody.initial_environment = {
+                    name: project_environment_name,
+                    is_default: true,
+                    is_active: true,
+                    variables: base_url_variable_name !== "base_url"
+                        ? [{ variable_name: base_url_variable_name, variable_value: website_url }]
+                        : [],
+                };
+            }
             project = await client.request("/api/web/v1/projects", {
                 method: "POST",
-                body: {
-                    name,
-                    website_url,
-                    description,
-                    environment: "staging",
-                    status: "active",
-                },
+                body: bootstrapProjectBody,
             });
             trace.push({ step: "create_web_project", status: "ok", detail: { id: project.id, name: project.name } });
         }
@@ -1482,51 +1587,18 @@ function registerTools(server, deps) {
         }
         let environment = null;
         if (add_base_url_variable) {
+            trace.push({
+                step: "create_initial_environment",
+                status: "ok",
+                detail: "Created in same transaction as project (POST /api/web/v1/projects).",
+            });
             try {
-                environment = await client.request(`/api/web/v1/projects/${encodeURIComponent(String(project_id))}/environments`, {
-                    method: "POST",
-                    body: {
-                        name: project_environment_name,
-                        is_default: true,
-                        is_active: true,
-                        variables: [{ variable_name: base_url_variable_name, variable_value: website_url }],
-                    },
-                });
-                trace.push({
-                    step: "create_environment",
-                    status: "ok",
-                    detail: { id: environment.id, name: environment.name },
-                });
+                const envs = await client.request(`/api/web/v1/projects/${encodeURIComponent(String(project_id))}/environments`);
+                const list = Array.isArray(envs) ? envs : [];
+                environment = list[0] ?? null;
             }
-            catch (e) {
-                if (e instanceof httpClient_js_1.TestNeoApiError) {
-                    trace.push({
-                        step: "create_environment",
-                        status: "error",
-                        detail: "Environment creation failed — project exists; retry testneo_create_web_project_environment.",
-                    });
-                    let detail = e.body;
-                    try {
-                        detail = JSON.parse(e.body);
-                    }
-                    catch {
-                        /* keep string */
-                    }
-                    const payload = asText({
-                        contract_version: "web_project_bootstrap.v1",
-                        trace,
-                        project_id,
-                        partial_success: true,
-                        error: "testneo_api_error",
-                        http_status: e.status,
-                        path: e.path,
-                        detail,
-                    });
-                    if (idem.key && idem.fingerprint)
-                        (0, idempotency_js_1.recordIdempotency)(idem.key, idem.fingerprint, payload);
-                    return result(payload);
-                }
-                throw e;
+            catch {
+                environment = null;
             }
         }
         else {
