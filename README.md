@@ -27,6 +27,8 @@
 | `TESTNEO_BASE_URL` | **TestNeo Cloud:** **`https://app.testneo.ai`**. **Local / self-hosted:** origin that serves **`/api/web/v1`** (e.g. `http://127.0.0.1:8000`). |
 | `TESTNEO_API_KEY` | your `tn_…` key |
 
+**Defaults & optional knobs:** if you omit optional `TESTNEO_MCP_*` variables, the server uses safe built-in defaults (e.g. read-only **`TESTNEO_MCP_ALLOW_WRITE`**, standard timeouts). **`TESTNEO_BASE_URL`** defaults to **`http://localhost:8001`** when unset—wrong for cloud, so always set it for **`app.testneo.ai`**. Full table, **client vs API** (no MCP vars on AWS `app/.env` for normal usage), and **how to override** via `mcp.json` / shell: [monorepo MCP quickstart](../../docs/mcp-quickstart.md#where-mcp-env-lives-client-vs-api) (see also the [environment variable table](../../docs/mcp-quickstart.md#mcp-environment-variables-required-optional-defaults)).
+
 Use **`127.0.0.1`** instead of `localhost` if Cursor or `npx` hits proxy issues ([monorepo troubleshooting](../../docs/mcp-troubleshooting.md)).
 
 ### 3) Add the server to your IDE (recommended: `npx`)
