@@ -8,4 +8,12 @@ export declare function registerTools(server: McpServer, deps: {
     relaxProjectPreconditions: boolean;
     policyMode: PolicyMode;
     routeHardening: RouteHardeningRuntimeConfig;
+    batchExecutionDefaults: {
+        defaultExecutionMode: "local" | "cloud";
+        defaultExecutionPlatform: string;
+        preferLocalAgent: boolean;
+        requireLocalAgentForBatch: boolean;
+        waitForAgentMs: number;
+        openAgentSetupOnAgentFailure: boolean;
+    };
 }): void;

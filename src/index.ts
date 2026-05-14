@@ -13,7 +13,7 @@ async function main(): Promise<void> {
 
   const server = new McpServer({
     name: "@testneo/mcp-server",
-    version: "0.1.0",
+    version: "0.1.1",
   });
 
   registerTools(server, {
@@ -25,6 +25,14 @@ async function main(): Promise<void> {
       enabled: config.routeHardeningEnabled,
       profile: config.routeProfile,
       customMap: config.routeMapCustom,
+    },
+    batchExecutionDefaults: {
+      defaultExecutionMode: config.defaultExecutionMode,
+      defaultExecutionPlatform: config.defaultExecutionPlatform,
+      preferLocalAgent: config.preferLocalAgent,
+      requireLocalAgentForBatch: config.requireLocalAgentForBatch,
+      waitForAgentMs: config.waitForAgentMs,
+      openAgentSetupOnAgentFailure: config.openAgentSetupOnAgentFailure,
     },
   });
 

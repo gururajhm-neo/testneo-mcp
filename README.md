@@ -24,7 +24,9 @@
 
 | Variable | Value |
 |----------|--------|
-| `TESTNEO_BASE_URL` | **TestNeo Cloud:** **`https://app.testneo.ai`**. **Local / self-hosted:** origin that serves **`/api/web/v1`** (e.g. `http://127.0.0.1:8000`). |
+| `TESTNEO_BASE_URL` | **TestNeo Cloud:** **`https://app.testneo.ai`**. **Local / self-hosted:** origin that serves **`/api/web/v1`** (e.g. `http://127.0.0.1:8001`). |
+| `TESTNEO_WEB_APP_URL` | **Optional.** Browser origin for execution dashboard links in MCP (e.g. Vite **`http://localhost:5173`**). Defaults to **`TESTNEO_BASE_URL`**, or **`…:5173`** when the base URL is **`localhost`/`127.0.0.1` on port 8001**. |
+| `TESTNEO_WEB_APP_PATH_PREFIX` | **Optional.** e.g. **`/web`** so links look like **`…/web/test-runner/execution/…`** (matches monorepo routes). Omit for **`…/test-runner/execution/…`** at the app root. |
 | `TESTNEO_API_KEY` | your `tn_…` key |
 
 **Defaults & optional knobs:** if you omit optional `TESTNEO_MCP_*` variables, the server uses safe built-in defaults (e.g. read-only **`TESTNEO_MCP_ALLOW_WRITE`**, standard timeouts). **`TESTNEO_BASE_URL`** defaults to **`http://localhost:8001`** when unset—wrong for cloud, so always set it for **`app.testneo.ai`**. Full table, **client vs API** (no MCP vars on AWS `app/.env` for normal usage), and **how to override** via `mcp.json` / shell: [monorepo MCP quickstart](../../docs/mcp-quickstart.md#where-mcp-env-lives-client-vs-api) (see also the [environment variable table](../../docs/mcp-quickstart.md#mcp-environment-variables-required-optional-defaults)).
@@ -44,7 +46,13 @@ No global install required. Example for **Cursor** (`~/.cursor/mcp.json` or **Se
       "env": {
         "TESTNEO_BASE_URL": "https://app.testneo.ai",
         "TESTNEO_API_KEY": "tn_YOUR_KEY_HERE",
-        "TESTNEO_MCP_ALLOW_WRITE": "false"
+        "TESTNEO_MCP_ALLOW_WRITE": "false",
+        "TESTNEO_MCP_TELEMETRY_JSONL": "true",
+        "TESTNEO_MCP_DEFAULT_EXECUTION_MODE": "local",
+        "TESTNEO_MCP_PREFER_LOCAL_AGENT": "true",
+        "TESTNEO_MCP_DEFAULT_EXECUTION_PLATFORM": "local",
+        "TESTNEO_MCP_REQUIRE_LOCAL_AGENT_FOR_BATCH": "true",
+        "TESTNEO_MCP_WAIT_FOR_AGENT_MS": "60000"
       }
     }
   }
@@ -132,7 +140,7 @@ See **`docs/IDE_SETUP.md`** for more client-specific notes.
 
 Read-heavy: connection, projects, executions, logs, trends, watch, failure bundles, agent workflows, unified contexts, Swagger preview, route map, etc.
 
-Writes (guarded): execute generated test, **`testneo_run_generated_test_pipeline`** (run + wait + report), rerun failed, trigger Playwright, Swagger upload/impact, NLP updates, route map persist, Figma ingest, etc.
+Writes (guarded): execute generated test, **`testneo_run_generated_test_pipeline`** (run + wait + report), **`testneo_run_batch_by_tags`** (multi-test run by tags + optional local agent routing), rerun failed, trigger Playwright, Swagger upload/impact, NLP updates, route map persist, Figma ingest, etc.
 
 Full list: **[`docs/MCP_TOOL_REFERENCE.md`](./docs/MCP_TOOL_REFERENCE.md)** (synced from monorepo **`docs/mcp-tool-reference.md`**) or [hosted tool reference](https://testneo.ai/docs/testneo-mcp.html).
 
@@ -147,9 +155,11 @@ Full list: **[`docs/MCP_TOOL_REFERENCE.md`](./docs/MCP_TOOL_REFERENCE.md)** (syn
 
 **Common optional flags**
 
+- **Execution routing (confused? start here):** In the monorepo, open **[`docs/mcp-quickstart.md`](../../docs/mcp-quickstart.md)** → **§1 Option A** — the example **`mcp.json`** includes the full `env` block. **Agent-first:** `TESTNEO_MCP_DEFAULT_EXECUTION_MODE=local` + `TESTNEO_MCP_PREFER_LOCAL_AGENT=true`. **Not agent-first:** the doc shows the alternate five lines to paste instead. Restart MCP after changes.
 - `TESTNEO_MCP_ALLOW_WRITE` — default `false`; set `true` only when you want mutating tools.
 - `TESTNEO_MCP_RELAX_PROJECT_PRECONDITIONS` — default `false`.
 - `TESTNEO_MCP_TELEMETRY_JSONL`, `TESTNEO_MCP_POLICY_MODE`, `TESTNEO_MCP_TIMEOUT_MS`, `TESTNEO_MCP_SWAGGER_TIMEOUT_MS`, `TESTNEO_MCP_USER_AGENT`
+- Batch / local agent defaults (for **`testneo_run_batch_by_tags`**): `TESTNEO_MCP_DEFAULT_EXECUTION_MODE`, `TESTNEO_MCP_DEFAULT_EXECUTION_PLATFORM`, `TESTNEO_MCP_PREFER_LOCAL_AGENT`, `TESTNEO_MCP_REQUIRE_LOCAL_AGENT_FOR_BATCH`, `TESTNEO_MCP_WAIT_FOR_AGENT_MS`, `TESTNEO_MCP_OPEN_AGENT_SETUP_ON_AGENT_FAILURE`
 - Route hardening: `TESTNEO_ROUTE_HARDENING`, `TESTNEO_ROUTE_PROFILE`, `TESTNEO_ROUTE_MAP_JSON`
 
 **Context generation:** For **SauceDemo.com** demos only, pass **`auth_preamble: { enabled: true, preset: "saucedemo" }`** so login lines and optional route phrase alignment apply. For **any other site** (e.g. public demos, your own app), **omit `auth_preamble`** — no SauceDemo login is injected and env username/password checks are not forced for that call. Use **`TESTNEO_ROUTE_MAP_JSON`** or **`testneo_set_project_route_map`** when Navigate steps need phrase → path hints.

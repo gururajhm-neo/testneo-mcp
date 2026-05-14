@@ -15,7 +15,14 @@ export declare class TestNeoApiError extends Error {
 export declare class HttpClient {
     private readonly config;
     private readonly normalizedBaseUrl;
+    private readonly normalizedWebAppBaseUrl;
     constructor(config: ServerConfig);
+    /** API origin (e.g. https://app.testneo.ai) — same host as `/web/agent` when app and API are co-deployed. */
+    getBaseUrl(): string;
+    /** SPA origin for dashboard deep links (may be Vite :5173 while API is :8001). */
+    getWebAppBaseUrl(): string;
+    /** Optional prefix before `/test-runner/...` (e.g. `/web`). */
+    getWebAppPathPrefix(): string;
     /** Same as `TESTNEO_MCP_SWAGGER_TIMEOUT_MS` — use for JSON endpoints that run impact / LLM work. */
     get longRequestTimeoutMs(): number;
     private resolveTimeout;

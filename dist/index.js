@@ -13,7 +13,7 @@ async function main() {
     const client = new httpClient_js_1.HttpClient(config);
     const server = new mcp_js_1.McpServer({
         name: "@testneo/mcp-server",
-        version: "0.1.0",
+        version: "0.1.1",
     });
     (0, index_js_1.registerTools)(server, {
         client,
@@ -24,6 +24,14 @@ async function main() {
             enabled: config.routeHardeningEnabled,
             profile: config.routeProfile,
             customMap: config.routeMapCustom,
+        },
+        batchExecutionDefaults: {
+            defaultExecutionMode: config.defaultExecutionMode,
+            defaultExecutionPlatform: config.defaultExecutionPlatform,
+            preferLocalAgent: config.preferLocalAgent,
+            requireLocalAgentForBatch: config.requireLocalAgentForBatch,
+            waitForAgentMs: config.waitForAgentMs,
+            openAgentSetupOnAgentFailure: config.openAgentSetupOnAgentFailure,
         },
     });
     const transport = new stdio_js_1.StdioServerTransport();

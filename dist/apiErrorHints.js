@@ -5,6 +5,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.summarizeTestNeoHttpError = summarizeTestNeoHttpError;
+exports.buildAgentFacingHttpEnvelope = buildAgentFacingHttpEnvelope;
 function isRecord(x) {
     return typeof x === "object" && x !== null && !Array.isArray(x);
 }
@@ -92,4 +93,60 @@ function summarizeTestNeoHttpError(status, bodyText) {
     if (!lines.length)
         return null;
     return lines.join("\n");
+}
+function categorizeHttpStatus(status) {
+    if (status === 401)
+        return "unauthorized";
+    if (status === 403)
+        return "forbidden";
+    if (status === 404)
+        return "not_found";
+    if (status === 409)
+        return "conflict";
+    if (status === 422 || status === 400)
+        return "validation";
+    if (status === 429)
+        return "rate_limit";
+    if (status >= 500)
+        return "server";
+    return "unknown";
+}
+function defaultNextSteps(status, agentSetupUrl) {
+    const steps = [];
+    if (status === 401) {
+        steps.push("Regenerate your TestNeo API key (tn_…) and update TESTNEO_API_KEY / ~/.npmrc token if you use publish.");
+        steps.push("Confirm npm whoami works with the same credentials used for MCP.");
+    }
+    if (status === 403) {
+        steps.push("Check subscription / trial limits in the TestNeo web app.");
+        steps.push("If publishing npm packages, ensure your token has publish scope and use npm publish --otp if 2FA applies.");
+    }
+    if (status === 404 && agentSetupUrl) {
+        steps.push(`No resource found. If this was the local agent endpoint, install and connect the agent: ${agentSetupUrl}`);
+    }
+    if (status === 429)
+        steps.push("Wait and retry with exponential backoff; reduce parallel tool calls.");
+    if (status >= 500)
+        steps.push("Retry later; if it persists, contact support with request_id from _telemetry when available.");
+    return steps;
+}
+/**
+ * Structured JSON error for MCP tools so agents can branch without scraping stack traces.
+ */
+function buildAgentFacingHttpEnvelope(status, path, bodyText, opts) {
+    const category = categorizeHttpStatus(status);
+    const hint = summarizeTestNeoHttpError(status, bodyText);
+    const message = hint ??
+        (bodyText.trim().length ? bodyText.trim().slice(0, 500) : `HTTP ${status} on ${path}`);
+    const retryable = status === 429 || status >= 500;
+    return {
+        contract_version: "testneo_mcp_http_error.v1",
+        http_status: status,
+        path,
+        category,
+        message,
+        detail_excerpt: bodyText.trim().slice(0, 1200),
+        retryable,
+        next_steps: defaultNextSteps(status, opts?.agentSetupUrl),
+    };
 }

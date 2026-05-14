@@ -16,6 +16,7 @@ npm run build
 - `TESTNEO_BASE_URL` — **`https://app.testneo.ai`** for TestNeo Cloud; or your self-hosted API URL (e.g. `http://localhost:8001` only for local API development).
 - `TESTNEO_API_KEY` — create in the app after [signup](https://app.testneo.ai/signup).
 - Optional: `TESTNEO_MCP_ALLOW_WRITE=true` to enable guarded write tools (still require `confirm=true` per call).
+- Optional batch / agent routing: `TESTNEO_MCP_DEFAULT_EXECUTION_MODE`, `TESTNEO_MCP_DEFAULT_EXECUTION_PLATFORM`, `TESTNEO_MCP_PREFER_LOCAL_AGENT`, `TESTNEO_MCP_REQUIRE_LOCAL_AGENT_FOR_BATCH`, `TESTNEO_MCP_WAIT_FOR_AGENT_MS`, `TESTNEO_MCP_OPEN_AGENT_SETUP_ON_AGENT_FAILURE` (see package `docs/MCP_TOOL_REFERENCE.md`).
 
 ## 3) MCP command
 
@@ -46,6 +47,9 @@ node /absolute/path/to/this-repo/dist/index.js
 - "Run Playwright spec preview for project 47 with confirm=true."
 - "Run figma_to_tests_workflow for project 47 and show top 3 previews."
 - "Trigger a Playwright execution in project 47 with these NLP commands (confirm=true)."
+- "Call testneo_list_tests_by_tags for project 47 with tags [\"smoke\", \"@regression\"] and tag_match any; summarize ids and names."
+- "Call testneo_get_local_agent_status and tell me if the local agent is connected."
+- "With writes on: run testneo_run_batch_by_tags for project 47, tags [\"smoke\"], tag_match any, confirm true, idempotency_key \"ide-smoke-1\"."
 
 ## Write action guard
 

@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { execFile } from "node:child_process";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { HttpClient, TestNeoApiError } from "../httpClient.js";
-import { summarizeTestNeoHttpError } from "../apiErrorHints.js";
+import { buildAgentFacingHttpEnvelope, summarizeTestNeoHttpError } from "../apiErrorHints.js";
 import {
   buildProjectSettingsWithRouteMap,
   parseProjectRouteConfig,
@@ -31,6 +32,7 @@ import { evaluatePreconditionPolicies, formatPolicyFailure, type PolicyMode } fr
 import { checkIdempotency, makeIdempotencyFingerprint, recordIdempotency } from "../idempotency.js";
 import { recordToolDimensions, runWithToolTelemetry } from "../toolTelemetry.js";
 import { ToolTextResult, ExecutionListItem } from "../types.js";
+import { buildExecutionUiNavigationForClient } from "../executionUiLinks.js";
 import {
   decodeSwaggerUploadBase64,
   sha256Utf8,
@@ -139,7 +141,7 @@ function result(text: string): ToolTextResult {
   return { content: [{ type: "text", text }] };
 }
 
-function formatTestNeoApiFailure(e: unknown): ToolTextResult | null {
+function formatTestNeoApiFailure(e: unknown, opts?: { agentSetupUrl?: string }): ToolTextResult | null {
   if (!(e instanceof TestNeoApiError)) return null;
   let detail: unknown = e.body;
   try {
@@ -148,11 +150,13 @@ function formatTestNeoApiFailure(e: unknown): ToolTextResult | null {
     /* keep raw string */
   }
   const hint = summarizeTestNeoHttpError(e.status, e.body);
+  const envelope = buildAgentFacingHttpEnvelope(e.status, e.path, e.body, opts);
   const payload: Record<string, unknown> = {
     error: "testneo_api_error",
     http_status: e.status,
     path: e.path,
     detail,
+    http_error_contract: envelope,
   };
   if (hint) {
     payload.mcp_client_summary = hint;
@@ -643,6 +647,7 @@ async function runExecutionReportPipeline(
   return {
     contract_version: "execution_pipeline.v1",
     execution_id,
+    ui_navigation: buildExecutionUiNavigationForClient(client, execution_id),
     reached_terminal_state: isTerminalStatus(finalSummary?.status),
     polls_performed: timeline.length,
     watch_timeline: timeline,
@@ -661,8 +666,8 @@ async function runExecutionReportPipeline(
             ? "Run failed — use failure_bundle and execution.steps for triage."
             : isTerminalStatus(finalSummary?.status)
               ? "Run reached a terminal state."
-              : "Run did not reach a terminal status within the poll budget — increase max_polls or poll_interval_ms.",
-      note: "This payload replaces chaining testneo_execute_generated_test_case → testneo_watch_execution → testneo_get_execution_status → testneo_get_execution_summary.",
+              : "Run did not reach a terminal status within the poll budget — increase max_polls or poll_interval_ms, or open ui_navigation.execution_dashboard_url for live app status.",
+      note: "This payload replaces chaining testneo_execute_generated_test_case → testneo_watch_execution → testneo_get_execution_status → testneo_get_execution_summary. For local-agent runs, analytics may lag; use ui_navigation for the in-app execution view.",
       recommended_next_tools: isFailedStatus(finalSummary?.status)
         ? ["testneo_update_test_case_nlp (review suggested_nlp_patch in failure_bundle)", "testneo_rerun_failed"]
         : isPassedStatus(finalSummary?.status)
@@ -697,9 +702,474 @@ export function registerTools(
     relaxProjectPreconditions: boolean;
     policyMode: PolicyMode;
     routeHardening: RouteHardeningRuntimeConfig;
+    batchExecutionDefaults: {
+      defaultExecutionMode: "local" | "cloud";
+      defaultExecutionPlatform: string;
+      preferLocalAgent: boolean;
+      requireLocalAgentForBatch: boolean;
+      waitForAgentMs: number;
+      openAgentSetupOnAgentFailure: boolean;
+    };
   }
 ): void {
-  const { client } = deps;
+  const { client, batchExecutionDefaults } = deps;
+  const agentSetupUrl = `${client.getBaseUrl()}/web/agent`;
+
+  function formatApiFailure(e: unknown): ToolTextResult | null {
+    return formatTestNeoApiFailure(e, { agentSetupUrl });
+  }
+
+  function normalizeMcpTagList(tags: string[]): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of tags) {
+      const t = raw.trim().replace(/^@+/, "").trim();
+      if (!t || seen.has(t)) continue;
+      seen.add(t);
+      out.push(t);
+    }
+    return out;
+  }
+
+  type ListedWebCase = { id: number; name: string; tags: string[] };
+
+  async function listAllTestCasesForTag(projectId: number, tag: string): Promise<ListedWebCase[]> {
+    const out: ListedWebCase[] = [];
+    let skip = 0;
+    const limit = 1000;
+    for (;;) {
+      const resp = await client.request<Record<string, unknown>>("/api/web/v1/test-cases/", {
+        query: { project_id: projectId, tag_filter: tag, limit, skip },
+      });
+      const items = parseListedWebCasesFromResponse(resp);
+      const total = typeof resp.total === "number" ? resp.total : skip + items.length;
+      out.push(...items);
+      skip += items.length;
+      if (skip >= total || items.length === 0) break;
+    }
+    return out;
+  }
+
+  async function resolveTestCasesByTags(
+    projectId: number,
+    normalizedTags: string[],
+    mode: "any" | "all"
+  ): Promise<{ cases: ListedWebCase[]; per_tag: Record<string, ListedWebCase[]> }> {
+    const per_tag: Record<string, ListedWebCase[]> = {};
+    for (const tag of normalizedTags) {
+      per_tag[tag] = await listAllTestCasesForTag(projectId, tag);
+    }
+    if (mode === "any") {
+      const byId = new Map<number, ListedWebCase>();
+      for (const tag of normalizedTags) {
+        for (const c of per_tag[tag] ?? []) {
+          if (!byId.has(c.id)) byId.set(c.id, c);
+        }
+      }
+      return { cases: [...byId.values()], per_tag };
+    }
+    const sets = normalizedTags.map((t) => new Set((per_tag[t] ?? []).map((c) => c.id)));
+    if (!sets.length) return { cases: [], per_tag };
+    let intersection = sets[0]!;
+    for (let i = 1; i < sets.length; i++) {
+      const next = new Set<number>();
+      for (const id of intersection) {
+        if (sets[i]!.has(id)) next.add(id);
+      }
+      intersection = next;
+    }
+    const byId = new Map<number, ListedWebCase>();
+    for (const tag of normalizedTags) {
+      for (const c of per_tag[tag] ?? []) {
+        if (intersection.has(c.id)) byId.set(c.id, c);
+      }
+    }
+    return { cases: [...byId.values()], per_tag };
+  }
+
+  function parseListedWebCasesFromResponse(resp: Record<string, unknown>): ListedWebCase[] {
+    const itemsRaw = Array.isArray(resp.items) ? resp.items : [];
+    const items: ListedWebCase[] = [];
+    for (const row of itemsRaw) {
+      if (!row || typeof row !== "object") continue;
+      const r = row as Record<string, unknown>;
+      const id = typeof r.id === "number" ? r.id : Number(r.id);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      const name = typeof r.name === "string" ? r.name : String(r.name ?? "");
+      const tagList = Array.isArray(r.tags) ? r.tags.map((t) => String(t)) : [];
+      items.push({ id, name, tags: tagList });
+    }
+    return items;
+  }
+
+  async function listTestCasesSearchAllPages(projectId: number, search: string, maxRows: number): Promise<ListedWebCase[]> {
+    const all: ListedWebCase[] = [];
+    let skip = 0;
+    const limit = 100;
+    for (;;) {
+      const resp = await client.request<Record<string, unknown>>("/api/web/v1/test-cases/", {
+        query: { project_id: projectId, search, limit, skip },
+      });
+      const items = parseListedWebCasesFromResponse(resp);
+      const total = typeof resp.total === "number" ? resp.total : skip + items.length;
+      all.push(...items);
+      skip += items.length;
+      if (skip >= total || items.length === 0 || all.length >= maxRows) break;
+    }
+    return all;
+  }
+
+  type ResolveByNameOk = {
+    ok: true;
+    test_case_id: number;
+    name: string;
+    resolution: "exact_name" | "unique_name_substring";
+  };
+  type ResolveByNameErr = {
+    ok: false;
+    error: "ambiguous_name" | "no_match" | "invalid_name_query";
+    message: string;
+    candidates?: ListedWebCase[];
+  };
+
+  async function resolveTestCaseByNameQuery(
+    projectId: number,
+    rawQuery: string,
+    mode: "auto" | "exact" | "substring"
+  ): Promise<ResolveByNameOk | ResolveByNameErr> {
+    const nameQuery = rawQuery.trim();
+    if (!nameQuery) {
+      return { ok: false, error: "invalid_name_query", message: "name_query is empty after trim." };
+    }
+    const needle = nameQuery.toLowerCase();
+    const rows = await listTestCasesSearchAllPages(projectId, nameQuery, 2000);
+    const exact = rows.filter((c) => c.name.trim().toLowerCase() === needle);
+    const byNameSub = rows.filter((c) => c.name.toLowerCase().includes(needle));
+
+    if (mode === "exact") {
+      if (exact.length === 1) {
+        const c = exact[0]!;
+        return { ok: true, test_case_id: c.id, name: c.name, resolution: "exact_name" };
+      }
+      if (exact.length === 0) {
+        return {
+          ok: false,
+          error: "no_match",
+          message: `No test case in project ${projectId} has name exactly matching "${nameQuery}".`,
+          candidates: byNameSub.slice(0, 25),
+        };
+      }
+      return {
+        ok: false,
+        error: "ambiguous_name",
+        message: `Multiple test cases have the exact name "${nameQuery}". Use test_case_id.`,
+        candidates: exact,
+      };
+    }
+
+    if (mode === "substring") {
+      if (byNameSub.length === 1) {
+        const c = byNameSub[0]!;
+        return { ok: true, test_case_id: c.id, name: c.name, resolution: "unique_name_substring" };
+      }
+      if (byNameSub.length === 0) {
+        return {
+          ok: false,
+          error: "no_match",
+          message: `No test case name in project ${projectId} contains "${nameQuery}".`,
+          candidates: rows.slice(0, 25),
+        };
+      }
+      return {
+        ok: false,
+        error: "ambiguous_name",
+        message: `Multiple test cases match name substring "${nameQuery}". Narrow name_query or use test_case_id.`,
+        candidates: byNameSub.slice(0, 25),
+      };
+    }
+
+    if (exact.length === 1) {
+      const c = exact[0]!;
+      return { ok: true, test_case_id: c.id, name: c.name, resolution: "exact_name" };
+    }
+    if (exact.length > 1) {
+      return {
+        ok: false,
+        error: "ambiguous_name",
+        message: `Multiple test cases have the exact name "${nameQuery}".`,
+        candidates: exact,
+      };
+    }
+    if (byNameSub.length === 1) {
+      const c = byNameSub[0]!;
+      return { ok: true, test_case_id: c.id, name: c.name, resolution: "unique_name_substring" };
+    }
+    if (byNameSub.length === 0) {
+      return {
+        ok: false,
+        error: "no_match",
+        message: `No test case in project ${projectId} matched "${nameQuery}" (exact name or unique name substring). Try testneo_find_test_cases with a longer search string.`,
+        candidates: rows.slice(0, 25),
+      };
+    }
+    return {
+      ok: false,
+      error: "ambiguous_name",
+      message: `Multiple test cases match "${nameQuery}" in the name. Narrow name_query or use test_case_id.`,
+      candidates: byNameSub.slice(0, 25),
+    };
+  }
+
+  async function resolveTestCaseIdForExecuteInput(args: {
+    test_case_id?: number | undefined;
+    project_id?: number | undefined;
+    name_query?: string | null | undefined;
+    name_match_mode: "auto" | "exact" | "substring";
+  }): Promise<
+    | {
+        ok: true;
+        test_case_id: number;
+        name_resolution:
+          | { mode: "by_id" }
+          | { mode: "by_name"; matched_name: string; resolution: string; name_query: string };
+      }
+    | { ok: false; payload: Record<string, unknown> }
+  > {
+    if (args.test_case_id != null && args.test_case_id > 0) {
+      return { ok: true, test_case_id: args.test_case_id, name_resolution: { mode: "by_id" } };
+    }
+    const pid = args.project_id;
+    const nq = args.name_query?.trim();
+    if (pid == null || pid <= 0 || !nq) {
+      return {
+        ok: false,
+        payload: {
+          contract_version: "testneo_mcp_test_case_resolve.v1",
+          error: "missing_test_target",
+          message: "Provide test_case_id OR (project_id + name_query).",
+        },
+      };
+    }
+    const resolved = await resolveTestCaseByNameQuery(pid, nq, args.name_match_mode);
+    if (!resolved.ok) {
+      return {
+        ok: false,
+        payload: {
+          contract_version: "testneo_mcp_test_case_resolve.v1",
+          error: resolved.error,
+          message: resolved.message,
+          project_id: pid,
+          name_query: nq,
+          name_match_mode: args.name_match_mode,
+          ...(resolved.candidates ? { candidates: resolved.candidates } : {}),
+        },
+      };
+    }
+    return {
+      ok: true,
+      test_case_id: resolved.test_case_id,
+      name_resolution: {
+        mode: "by_name",
+        matched_name: resolved.name,
+        resolution: resolved.resolution,
+        name_query: nq,
+      },
+    };
+  }
+
+  async function readLocalAgentSafePayload(): Promise<Record<string, unknown>> {
+    const data = await client.request<Record<string, unknown>>("/api/web/v1/agents/my-agent");
+    const hb = typeof data.last_heartbeat === "string" ? data.last_heartbeat : null;
+    let seconds_since_heartbeat: number | null = null;
+    if (hb) {
+      const t = Date.parse(hb);
+      if (!Number.isNaN(t)) seconds_since_heartbeat = Math.max(0, Math.floor((Date.now() - t) / 1000));
+    }
+    const st = typeof data.status === "string" ? data.status.toLowerCase() : "offline";
+    const fresh = seconds_since_heartbeat !== null && seconds_since_heartbeat <= 90;
+    const agent_connected = (st === "online" || st === "busy") && fresh;
+    const agent_id = typeof data.agent_id === "number" ? data.agent_id : Number(data.agent_id);
+    return {
+      contract_version: "testneo_mcp_agent_status.v1",
+      agent_registered: true,
+      agent_id: Number.isFinite(agent_id) ? agent_id : null,
+      status: st,
+      last_heartbeat: hb,
+      seconds_since_heartbeat,
+      agent_connected,
+      setup_url: agentSetupUrl,
+      note: "Agent API key is omitted for safety.",
+    };
+  }
+
+  function isAgentConnectedSnapshot(snapshot: Record<string, unknown>): boolean {
+    return snapshot.agent_connected === true;
+  }
+
+  /** Best-effort: open agent setup in the default browser (user machine). No-op when disabled in config. */
+  function tryOpenAgentSetupUrl(url: string): void {
+    if (!batchExecutionDefaults.openAgentSetupOnAgentFailure) return;
+    try {
+      if (process.platform === "darwin") {
+        execFile("open", [url], { timeout: 15_000 }, () => {});
+      } else if (process.platform === "win32") {
+        execFile("cmd", ["/c", "start", "", url], { timeout: 15_000, windowsHide: true }, () => {});
+      } else {
+        execFile("xdg-open", [url], { timeout: 15_000 }, () => {});
+      }
+    } catch {
+      /* ignore desktop open failures */
+    }
+  }
+
+  type EnsureAgentOutcome =
+    | { ok: true; snapshot: Record<string, unknown>; waited_ms: number; polls: number }
+    | { ok: false; kind: "not_registered"; waited_ms: number; polls: number }
+    | { ok: false; kind: "not_connected"; snapshot: Record<string, unknown>; waited_ms: number; polls: number };
+
+  async function ensureLocalAgentReadyForRun(maxWaitMs: number): Promise<EnsureAgentOutcome> {
+    const pollMs = 2000;
+    const t0 = Date.now();
+    let polls = 0;
+    let lastSnapshot: Record<string, unknown> | null = null;
+    const deadline = t0 + maxWaitMs;
+
+    while (true) {
+      polls += 1;
+      try {
+        lastSnapshot = await readLocalAgentSafePayload();
+        if (isAgentConnectedSnapshot(lastSnapshot)) {
+          return { ok: true, snapshot: lastSnapshot, waited_ms: Date.now() - t0, polls };
+        }
+      } catch (e) {
+        if (e instanceof TestNeoApiError && e.status === 404) {
+          return { ok: false, kind: "not_registered", waited_ms: Date.now() - t0, polls };
+        }
+        throw e;
+      }
+      if (Date.now() >= deadline) {
+        return {
+          ok: false,
+          kind: "not_connected",
+          snapshot: lastSnapshot as Record<string, unknown>,
+          waited_ms: Date.now() - t0,
+          polls,
+        };
+      }
+      await sleep(pollMs);
+    }
+  }
+
+  /** True when MCP should ask the API to queue work for the self-hosted agent (same rules as batch-by-tags). */
+  function shouldPostUseAgentToExecuteApi(): boolean {
+    return batchExecutionDefaults.preferLocalAgent && batchExecutionDefaults.defaultExecutionMode === "local";
+  }
+
+  type SingleExecutePreflight =
+    | {
+        proceed: true;
+        use_agent: boolean;
+        agent_wait: Record<string, unknown> | null;
+        agent_snapshot: Record<string, unknown> | null;
+      }
+    | { proceed: false; blocked: ToolTextResult };
+
+  async function preflightLocalAgentForSingleTestExecute(
+    wait_for_agent_seconds: number | undefined | null,
+    contractVersion: string
+  ): Promise<SingleExecutePreflight> {
+    const use_agent = shouldPostUseAgentToExecuteApi();
+    if (!use_agent) {
+      return { proceed: true, use_agent: false, agent_wait: null, agent_snapshot: null };
+    }
+
+    const requireAgent = batchExecutionDefaults.requireLocalAgentForBatch;
+    const toolBudgetMs =
+      wait_for_agent_seconds != null ? Math.min(wait_for_agent_seconds * 1000, 300_000) : null;
+    const effectiveWaitMs =
+      toolBudgetMs != null ? toolBudgetMs : batchExecutionDefaults.waitForAgentMs;
+
+    if (!requireAgent && effectiveWaitMs <= 0) {
+      return { proceed: true, use_agent: true, agent_wait: null, agent_snapshot: null };
+    }
+
+    const ensured = await ensureLocalAgentReadyForRun(effectiveWaitMs);
+    const agent_wait = {
+      max_wait_ms: effectiveWaitMs,
+      waited_ms: ensured.waited_ms,
+      polls: ensured.polls,
+      outcome: ensured.ok ? "connected" : ensured.kind,
+    };
+
+    if (ensured.ok) {
+      return { proceed: true, use_agent: true, agent_wait, agent_snapshot: ensured.snapshot };
+    }
+
+    if (ensured.kind === "not_registered") {
+      if (requireAgent) {
+        tryOpenAgentSetupUrl(agentSetupUrl);
+        return {
+          proceed: false,
+          blocked: result(
+            asText({
+              contract_version: contractVersion,
+              error: "local_agent_required_not_registered",
+              setup_url: agentSetupUrl,
+              opened_setup_url: batchExecutionDefaults.openAgentSetupOnAgentFailure,
+              agent_wait,
+              message:
+                "This execution is configured to use the self-hosted agent (use_agent), but no agent is registered for your account.",
+              next_steps: [
+                `Register and connect an agent via ${agentSetupUrl}`,
+                "Increase TESTNEO_MCP_WAIT_FOR_AGENT_MS (or pass wait_for_agent_seconds) if you create the agent immediately after this call.",
+              ],
+            })
+          ),
+        };
+      }
+      return {
+        proceed: true,
+        use_agent: true,
+        agent_wait,
+        agent_snapshot: {
+          contract_version: "testneo_mcp_agent_status.v1",
+          agent_registered: false,
+          agent_connected: false,
+          setup_url: agentSetupUrl,
+          note: "No agent registered; request still sends use_agent=true — the API may fall back if job creation fails.",
+        },
+      };
+    }
+
+    if (requireAgent) {
+      tryOpenAgentSetupUrl(agentSetupUrl);
+      return {
+        proceed: false,
+        blocked: result(
+          asText({
+            contract_version: contractVersion,
+            error: "local_agent_required_not_connected",
+            opened_setup_url: batchExecutionDefaults.openAgentSetupOnAgentFailure,
+            agent_wait,
+            agent: ensured.snapshot,
+            message:
+              "Local agent did not show a fresh heartbeat within the wait window. Start the agent, increase TESTNEO_MCP_WAIT_FOR_AGENT_MS or wait_for_agent_seconds, or set TESTNEO_MCP_REQUIRE_LOCAL_AGENT_FOR_BATCH=false.",
+          })
+        ),
+      };
+    }
+
+    return {
+      proceed: true,
+      use_agent: true,
+      agent_wait,
+      agent_snapshot: {
+        ...ensured.snapshot,
+        note: "Agent not connected within wait window; request still sends use_agent=true — the API may fall back if no agent is available.",
+      },
+    };
+  }
+
   const projectRouteCache = new Map<number, ProjectRouteHardeningConfig>();
   let cachedTenantId: string | null | undefined = undefined;
   let tenantLookupInFlight: Promise<string | null> | null = null;
@@ -959,6 +1429,373 @@ export function registerTools(
         recordToolDimensions({ tenantId: tenant });
       }
       return result(`Connection valid.\n${asText(response)}`);
+    }
+  );
+
+  registerTracedTool(
+    "testneo_get_local_agent_status",
+    {
+      description:
+        "Returns whether a TestNeo self-hosted agent is registered and recently heartbeating (local runner). Includes setup_url on the same origin as TESTNEO_BASE_URL (for example …/web/agent). Read-only.",
+      inputSchema: z.object({}),
+    },
+    async () => {
+      try {
+        return result(asText(await readLocalAgentSafePayload()));
+      } catch (e) {
+        if (e instanceof TestNeoApiError && e.status === 404) {
+          return result(
+            asText({
+              contract_version: "testneo_mcp_agent_status.v1",
+              agent_registered: false,
+              agent_connected: false,
+              setup_url: agentSetupUrl,
+              message: "No self-hosted agent registered for this account yet.",
+              next_steps: [
+                `Open ${agentSetupUrl} to install or connect the agent.`,
+                "After the agent runs, expect a heartbeat within about a minute.",
+              ],
+            })
+          );
+        }
+        const fmt = formatApiFailure(e);
+        if (fmt) return fmt;
+        throw e;
+      }
+    }
+  );
+
+  registerTracedTool(
+    "testneo_list_tests_by_tags",
+    {
+      description:
+        "List web test case ids for a project matching one or more tags. Tags may include a leading @; each tag is queried separately (union with tag_match=any, intersection with all). Backend: GET /api/web/v1/test-cases/?tag_filter= (one tag per request).",
+      inputSchema: z.object({
+        project_id: z.number().int().positive(),
+        tags: z.array(z.string().min(1)).min(1).max(40),
+        tag_match: z.enum(["any", "all"]).default("any"),
+      }),
+    },
+    async ({ project_id, tags, tag_match }) => {
+      try {
+        const normalized = normalizeMcpTagList(tags);
+        if (!normalized.length) {
+          return result(
+            asText({
+              contract_version: "testneo_mcp_tag_list.v1",
+              error: "no_tags_after_normalize",
+              message: "Provide at least one non-empty tag (with or without a leading @).",
+            })
+          );
+        }
+        const { cases, per_tag } = await resolveTestCasesByTags(project_id, normalized, tag_match);
+        const counts: Record<string, number> = {};
+        for (const t of normalized) counts[t] = per_tag[t]?.length ?? 0;
+        return result(
+          asText({
+            contract_version: "testneo_mcp_tag_list.v1",
+            project_id,
+            tag_match,
+            tags_requested: normalized,
+            counts_per_tag: counts,
+            test_case_count: cases.length,
+            test_cases: cases.map((c) => ({ id: c.id, name: c.name, tags: c.tags })),
+          })
+        );
+      } catch (e) {
+        const fmt = formatApiFailure(e);
+        if (fmt) return fmt;
+        throw e;
+      }
+    }
+  );
+
+  registerTracedTool(
+    "testneo_find_test_cases",
+    {
+      description:
+        "List web test cases in a project using the backend text search (?search= on GET /api/web/v1/test-cases/). Matches name/description per API rules. Read-only — use returned id + name with testneo_run_generated_test_pipeline (test_case_id) or pass project_id + name_query to run by name.",
+      inputSchema: z.object({
+        project_id: z.number().int().positive(),
+        search: z.string().min(1).max(500),
+        limit: z.number().int().min(1).max(200).default(50),
+        skip: z.number().int().min(0).default(0),
+      }),
+    },
+    async ({ project_id, search, limit, skip }) => {
+      try {
+        const resp = await client.request<Record<string, unknown>>("/api/web/v1/test-cases/", {
+          query: { project_id, search, limit, skip },
+        });
+        const items = parseListedWebCasesFromResponse(resp);
+        const total = typeof resp.total === "number" ? resp.total : items.length;
+        return result(
+          asText({
+            contract_version: "testneo_mcp_test_case_search.v1",
+            project_id,
+            search,
+            skip,
+            limit,
+            total,
+            count: items.length,
+            test_cases: items.map((c) => ({ id: c.id, name: c.name, tags: c.tags })),
+          })
+        );
+      } catch (e) {
+        const fmt = formatApiFailure(e);
+        if (fmt) return fmt;
+        throw e;
+      }
+    }
+  );
+
+  registerTracedTool(
+    "testneo_run_batch_by_tags",
+    {
+      description:
+        "Create and execute a multi-test run for tests matching tags (write: requires TESTNEO_MCP_ALLOW_WRITE + confirm=true). Resolves tags like testneo_list_tests_by_tags, then POST /api/web/v1/multi-test-runs/create and POST …/execute. When TESTNEO_MCP_DEFAULT_EXECUTION_MODE=local and TESTNEO_MCP_PREFER_LOCAL_AGENT=true, sets use_agent for the local TestNeo agent. While use_agent: polls GET /agents/my-agent until connected or until TESTNEO_MCP_WAIT_FOR_AGENT_MS / wait_for_agent_seconds elapses (avoids failing if you start the agent seconds after invoking the tool). Optional TESTNEO_MCP_OPEN_AGENT_SETUP_ON_AGENT_FAILURE opens setup_url on hard agent failure.",
+      inputSchema: z.object({
+        project_id: z.number().int().positive(),
+        tags: z.array(z.string().min(1)).min(1).max(40),
+        tag_match: z.enum(["any", "all"]).default("any"),
+        confirm: z.boolean().default(false),
+        idempotency_key: z.string().min(8).max(128).optional(),
+        run_name: z.string().min(1).max(200).optional(),
+        notes: z.string().max(2000).optional(),
+        parallel: z.boolean().default(false),
+        max_workers: z.number().int().min(1).max(50).optional(),
+        environment_variables: z.record(z.string()).optional(),
+        execution_settings: z.record(z.string(), z.unknown()).optional(),
+        /** Overrides TESTNEO_MCP_WAIT_FOR_AGENT_MS for this call (0–300 seconds). */
+        wait_for_agent_seconds: z.number().int().min(0).max(300).optional(),
+      }),
+    },
+    async ({
+      project_id,
+      tags,
+      tag_match,
+      confirm,
+      idempotency_key,
+      run_name,
+      notes,
+      parallel,
+      max_workers,
+      environment_variables,
+      execution_settings,
+      wait_for_agent_seconds,
+    }) => {
+      if (!deps.allowWriteTools) {
+        return result(
+          "Write tools are disabled. Set TESTNEO_MCP_ALLOW_WRITE=true to create and execute multi-test runs."
+        );
+      }
+      if (!confirm) {
+        return result(
+          asText({
+            contract_version: "testneo_mcp_batch_run.v1",
+            mode: "preview",
+            message:
+              "Set confirm=true to create and execute a multi-test run for tests matching the given tags.",
+            project_id,
+            tags,
+            tag_match,
+            wait_for_agent_seconds: wait_for_agent_seconds ?? null,
+            wait_for_agent_ms_env: batchExecutionDefaults.waitForAgentMs,
+            requires_env: "TESTNEO_MCP_ALLOW_WRITE=true",
+          })
+        );
+      }
+
+      const normalized = normalizeMcpTagList(tags);
+      if (!normalized.length) {
+        return result(
+          asText({
+            contract_version: "testneo_mcp_batch_run.v1",
+            error: "no_tags_after_normalize",
+            message: "Provide at least one non-empty tag (with or without a leading @).",
+          })
+        );
+      }
+
+      const idem = replayOrConflict("testneo_run_batch_by_tags", idempotency_key, {
+        project_id,
+        tags: normalized,
+        tag_match,
+        wait_for_agent_seconds: wait_for_agent_seconds ?? null,
+      });
+      if (idem.blocked) return idem.blocked;
+
+      try {
+        const blocked = await gateProjectExecutable(project_id, { toolName: "testneo_run_batch_by_tags" });
+        if (blocked) return blocked;
+
+        const { cases } = await resolveTestCasesByTags(project_id, normalized, tag_match);
+        if (!cases.length) {
+          return result(
+            asText({
+              contract_version: "testneo_mcp_batch_run.v1",
+              error: "no_matching_tests",
+              project_id,
+              tags: normalized,
+              tag_match,
+              message: "No test cases matched the tag filter for this project.",
+            })
+          );
+        }
+
+        const test_case_ids = cases.map((c) => c.id).sort((a, b) => a - b);
+        const use_agent = shouldPostUseAgentToExecuteApi();
+        const requireAgent = use_agent && batchExecutionDefaults.requireLocalAgentForBatch;
+
+        let agent_snapshot: Record<string, unknown> | null = null;
+        let agent_wait: Record<string, unknown> | null = null;
+
+        if (use_agent) {
+          const toolBudgetMs =
+            wait_for_agent_seconds != null ? Math.min(wait_for_agent_seconds * 1000, 300_000) : null;
+          const effectiveWaitMs =
+            toolBudgetMs != null ? toolBudgetMs : batchExecutionDefaults.waitForAgentMs;
+          const ensured = await ensureLocalAgentReadyForRun(effectiveWaitMs);
+          agent_wait = {
+            max_wait_ms: effectiveWaitMs,
+            waited_ms: ensured.waited_ms,
+            polls: ensured.polls,
+            outcome: ensured.ok ? "connected" : ensured.kind,
+          };
+
+          if (ensured.ok) {
+            agent_snapshot = ensured.snapshot;
+          } else if (ensured.kind === "not_registered") {
+            if (requireAgent) {
+              tryOpenAgentSetupUrl(agentSetupUrl);
+              return result(
+                asText({
+                  contract_version: "testneo_mcp_batch_run.v1",
+                  error: "local_agent_required_not_registered",
+                  setup_url: agentSetupUrl,
+                  opened_setup_url: batchExecutionDefaults.openAgentSetupOnAgentFailure,
+                  agent_wait,
+                  message:
+                    "Batch execution is configured to require a connected TestNeo local agent, but no agent is registered.",
+                  next_steps: [
+                    `Register and connect an agent via ${agentSetupUrl}`,
+                    "Increase TESTNEO_MCP_WAIT_FOR_AGENT_MS (or pass wait_for_agent_seconds) if you create the agent immediately after this call.",
+                  ],
+                })
+              );
+            }
+            agent_snapshot = {
+              contract_version: "testneo_mcp_agent_status.v1",
+              agent_registered: false,
+              agent_connected: false,
+              setup_url: agentSetupUrl,
+              note: "No agent registered; batch still runs because TESTNEO_MCP_REQUIRE_LOCAL_AGENT_FOR_BATCH is false.",
+            };
+          } else {
+            if (requireAgent) {
+              tryOpenAgentSetupUrl(agentSetupUrl);
+              return result(
+                asText({
+                  contract_version: "testneo_mcp_batch_run.v1",
+                  error: "local_agent_required_not_connected",
+                  opened_setup_url: batchExecutionDefaults.openAgentSetupOnAgentFailure,
+                  agent_wait,
+                  agent: ensured.snapshot,
+                  message:
+                    "Local agent did not show a fresh heartbeat within the wait window. Start the agent, increase TESTNEO_MCP_WAIT_FOR_AGENT_MS or wait_for_agent_seconds, or set TESTNEO_MCP_REQUIRE_LOCAL_AGENT_FOR_BATCH=false.",
+                })
+              );
+            }
+            agent_snapshot = {
+              ...ensured.snapshot,
+              note: "Agent not connected within wait window; batch still runs because require-local is false.",
+            };
+          }
+        }
+
+        const mergedExecutionSettings: Record<string, unknown> = {
+          headless: true,
+          screenshots: "on_failure",
+          timeout: 60000,
+          slow_motion: 0,
+          ...(execution_settings ?? {}),
+          use_agent,
+          execution_mode: batchExecutionDefaults.defaultExecutionMode,
+          execution_platform: batchExecutionDefaults.defaultExecutionPlatform,
+        };
+
+        const createBody: Record<string, unknown> = {
+          project_id,
+          test_case_ids,
+          ...(run_name ? { run_name } : {}),
+          ...(notes ? { notes } : {}),
+        };
+
+        const created = await client.request<Record<string, unknown>>("/api/web/v1/multi-test-runs/create", {
+          method: "POST",
+          body: createBody,
+        });
+
+        const test_run_id = typeof created.test_run_id === "number" ? created.test_run_id : Number(created.test_run_id);
+        if (!Number.isFinite(test_run_id) || test_run_id <= 0) {
+          return result(
+            asText({
+              contract_version: "testneo_mcp_batch_run.v1",
+              error: "create_response_missing_test_run_id",
+              create_response: created,
+            })
+          );
+        }
+
+        const execBody: Record<string, unknown> = {
+          test_case_ids,
+          environment_variables: environment_variables ?? {},
+          execution_settings: mergedExecutionSettings,
+          parallel,
+          execution_mode: batchExecutionDefaults.defaultExecutionMode,
+          execution_platform: batchExecutionDefaults.defaultExecutionPlatform,
+          ...(max_workers != null ? { max_workers } : {}),
+        };
+        if (run_name) execBody.run_name = run_name;
+        if (notes !== undefined && notes !== "") execBody.notes = notes;
+
+        const executed = await client.request<Record<string, unknown>>(
+          `/api/web/v1/multi-test-runs/${encodeURIComponent(String(test_run_id))}/execute`,
+          { method: "POST", body: execBody }
+        );
+
+        const payload = {
+          contract_version: "testneo_mcp_batch_run.v1",
+          project_id,
+          tags_requested: normalized,
+          tag_match,
+          test_case_ids,
+          test_case_count: test_case_ids.length,
+          routing: {
+            execution_mode: batchExecutionDefaults.defaultExecutionMode,
+            execution_platform: batchExecutionDefaults.defaultExecutionPlatform,
+            prefer_local_agent: batchExecutionDefaults.preferLocalAgent,
+            require_local_agent_for_batch: batchExecutionDefaults.requireLocalAgentForBatch,
+            wait_for_agent_ms_default: batchExecutionDefaults.waitForAgentMs,
+            open_agent_setup_on_agent_failure: batchExecutionDefaults.openAgentSetupOnAgentFailure,
+            use_agent,
+          },
+          agent_wait: use_agent ? agent_wait : null,
+          agent_snapshot,
+          create_response: created,
+          execute_response: executed,
+          monitor_hint: `Poll GET /api/web/v1/multi-test-runs/${test_run_id}/status or use the TestNeo app for live progress.`,
+        };
+
+        if (idem.key && idem.fingerprint) {
+          recordIdempotency(idem.key, idem.fingerprint, JSON.stringify(payload));
+        }
+        return result(asText(payload));
+      } catch (e) {
+        const fmt = formatApiFailure(e);
+        if (fmt) return fmt;
+        throw e;
+      }
     }
   );
 
@@ -1759,7 +2596,7 @@ export function registerTools(
         if (idem.key && idem.fingerprint) recordIdempotency(idem.key, idem.fingerprint, text);
         return result(text);
       } catch (e) {
-        const fmt = formatTestNeoApiFailure(e);
+        const fmt = formatApiFailure(e);
         if (fmt) return fmt;
         throw e;
       }
@@ -1837,7 +2674,7 @@ export function registerTools(
         if (idem.key && idem.fingerprint) recordIdempotency(idem.key, idem.fingerprint, text);
         return result(text);
       } catch (e) {
-        const fmt = formatTestNeoApiFailure(e);
+        const fmt = formatApiFailure(e);
         if (fmt) return fmt;
         throw e;
       }
@@ -1965,7 +2802,7 @@ export function registerTools(
         });
         trace.push({ step: "validate_connection", status: "ok", detail: v });
       } catch (e) {
-        const fmt = formatTestNeoApiFailure(e);
+        const fmt = formatApiFailure(e);
         if (fmt) return fmt;
         throw e;
       }
@@ -2136,6 +2973,7 @@ export function registerTools(
         asText({
           contract_version: "execution_intelligence.v1",
           execution_id,
+          ui_navigation: buildExecutionUiNavigationForClient(client, execution_id),
           execution: normalized,
           raw_response_meta: {
             api_version: response.api_version ?? null,
@@ -2158,7 +2996,14 @@ export function registerTools(
         `/api/web/v1/analytics/execution/${encodeURIComponent(execution_id)}/summary`
       );
       const normalized = normalizeExecutionSummary(response);
-      return result(asText({ contract_version: "execution_intelligence.v1", execution_id, summary: normalized }));
+      return result(
+        asText({
+          contract_version: "execution_intelligence.v1",
+          execution_id,
+          ui_navigation: buildExecutionUiNavigationForClient(client, execution_id),
+          summary: normalized,
+        })
+      );
     }
   );
 
@@ -2177,7 +3022,11 @@ export function registerTools(
         `/api/web/v1/executions/${encodeURIComponent(execution_id)}/logs`,
         { query: { limit, offset } }
       );
-      return result(asText(response));
+      const nav = buildExecutionUiNavigationForClient(client, execution_id);
+      if (response && typeof response === "object" && !Array.isArray(response)) {
+        return result(asText({ ...(response as Record<string, unknown>), ui_navigation: nav }));
+      }
+      return result(asText({ logs_payload: response, ui_navigation: nav }));
     }
   );
 
@@ -2285,6 +3134,7 @@ export function registerTools(
         asText({
           contract_version: "execution_intelligence.v1",
           execution_id,
+          ui_navigation: buildExecutionUiNavigationForClient(client, execution_id),
           final_status: finalSummary?.status ?? "unknown",
           final_canonical_status: toCanonicalExecutionStatus(finalSummary?.status),
           polls_performed: timeline.length,
@@ -2315,7 +3165,14 @@ export function registerTools(
         include_nlp_patch_suggestion !== false
           ? await enrichBundleWithNlpPatch(client, bundle, deps.routeHardening)
           : bundle;
-      return result(asText(enriched));
+      return result(
+        asText({
+          ...(typeof enriched === "object" && enriched !== null && !Array.isArray(enriched)
+            ? (enriched as Record<string, unknown>)
+            : { bundle: enriched }),
+          ui_navigation: buildExecutionUiNavigationForClient(client, execution_id),
+        })
+      );
     }
   );
 
@@ -2838,34 +3695,86 @@ export function registerTools(
     "testneo_execute_generated_test_case",
     {
       description:
-        "Execute a generated test case by ID (human-in-loop gated). Uses web test-case execution endpoint. Optional environment_id or environment_name resolves {{variables}} from that project environment (same as UI); omit to use NLP # Environment: directive, project default, or first env.",
-      inputSchema: z.object({
-        test_case_id: z.number().int().positive(),
-        confirm: z.boolean().default(false),
-        idempotency_key: z.string().min(8).max(128).optional(),
-        environment_id: z.number().int().positive().optional(),
-        environment_name: z.string().min(1).optional(),
-      }),
+        "Execute a generated test case by numeric test_case_id OR by project_id + name_query (resolved via GET …/test-cases/?search= then exact/unique name match). Human-in-loop gated. POST /api/web/v1/test-cases/{id}/execute — passes use_agent when TESTNEO_MCP_DEFAULT_EXECUTION_MODE=local and TESTNEO_MCP_PREFER_LOCAL_AGENT=true (same routing as batch). Optional wait_for_agent_seconds + env TESTNEO_MCP_WAIT_FOR_AGENT_MS / TESTNEO_MCP_REQUIRE_LOCAL_AGENT_FOR_BATCH control preflight polling. Use testneo_find_test_cases to browse matches before running.",
+      inputSchema: z
+        .object({
+          test_case_id: z.number().int().positive().optional(),
+          project_id: z.number().int().positive().optional(),
+          name_query: z.string().min(1).max(500).optional(),
+          name_match_mode: z.enum(["auto", "exact", "substring"]).default("auto"),
+          confirm: z.boolean().default(false),
+          idempotency_key: z.string().min(8).max(128).optional(),
+          environment_id: z.number().int().positive().optional(),
+          environment_name: z.string().min(1).optional(),
+          wait_for_agent_seconds: z.number().int().min(0).max(300).optional(),
+        })
+        .superRefine((data, ctx) => {
+          const hasId = data.test_case_id != null && data.test_case_id > 0;
+          const hasName = data.project_id != null && data.project_id > 0 && !!data.name_query?.trim();
+          if (!hasId && !hasName) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "Provide test_case_id OR (project_id + name_query).",
+              path: [],
+            });
+          }
+        }),
     },
-    async ({ test_case_id, confirm, idempotency_key, environment_id, environment_name }) => {
+    async ({
+      test_case_id,
+      project_id,
+      name_query,
+      name_match_mode,
+      confirm,
+      idempotency_key,
+      environment_id,
+      environment_name,
+      wait_for_agent_seconds,
+    }) => {
+      const resolved = await resolveTestCaseIdForExecuteInput({
+        test_case_id,
+        project_id,
+        name_query,
+        name_match_mode,
+      });
+      if (!resolved.ok) return result(asText(resolved.payload));
+      const execId = resolved.test_case_id;
+
+      if (!confirm) {
+        return result(
+          asText({
+            contract_version: "testneo_mcp_execute_preview.v1",
+            mode: "preview",
+            message: `Set confirm=true to execute test_case_id=${execId}.`,
+            test_case_id: execId,
+            name_resolution: resolved.name_resolution,
+            requires_env: "TESTNEO_MCP_ALLOW_WRITE=true to perform execution",
+          })
+        );
+      }
       if (!deps.allowWriteTools) {
         return result("Write tools are disabled. Set TESTNEO_MCP_ALLOW_WRITE=true to enable execution.");
       }
-      if (!confirm) {
-        return result(`Execution preview only. Set confirm=true to execute test_case_id=${test_case_id}.`);
-      }
       const idem = replayOrConflict("testneo_execute_generated_test_case", idempotency_key, {
-        test_case_id,
+        test_case_id: execId,
         environment_id: environment_id ?? null,
         environment_name: environment_name ?? null,
+        wait_for_agent_seconds: wait_for_agent_seconds ?? null,
       });
       if (idem.blocked) return idem.blocked;
-      const blocked = await gateProjectExecutableFromTestCase(test_case_id, {
+      const blocked = await gateProjectExecutableFromTestCase(execId, {
         toolName: "testneo_execute_generated_test_case",
       });
       if (blocked) return blocked;
+
+      const agentPf = await preflightLocalAgentForSingleTestExecute(
+        wait_for_agent_seconds,
+        "testneo_mcp_execute_preflight.v1"
+      );
+      if (!agentPf.proceed) return agentPf.blocked;
+
       const response = await client.request<Record<string, unknown>>(
-        `/api/web/v1/test-cases/${encodeURIComponent(String(test_case_id))}/execute`,
+        `/api/web/v1/test-cases/${encodeURIComponent(String(execId))}/execute`,
         {
           method: "POST",
           body: {
@@ -2873,10 +3782,22 @@ export function registerTools(
             trigger_reason: "human_approved_generated_test",
             ...(environment_id != null ? { environment_id } : {}),
             ...(environment_name ? { environment_name } : {}),
+            ...(agentPf.use_agent ? { use_agent: true } : {}),
           },
         }
       );
-      const payload = { test_case_id, response };
+      const startedExecutionId = extractExecutionIdFromExecuteResponse(response);
+      const payload = {
+        test_case_id: execId,
+        name_resolution: resolved.name_resolution,
+        routing: { use_agent: agentPf.use_agent },
+        ...(agentPf.agent_wait ? { agent_wait: agentPf.agent_wait } : {}),
+        ...(agentPf.agent_snapshot ? { agent_preflight: agentPf.agent_snapshot } : {}),
+        ...(startedExecutionId
+          ? { ui_navigation: buildExecutionUiNavigationForClient(client, startedExecutionId) }
+          : {}),
+        response,
+      };
       if (idem.key && idem.fingerprint) recordIdempotency(idem.key, idem.fingerprint, JSON.stringify(payload));
       return result(asText(payload));
     }
@@ -2886,27 +3807,46 @@ export function registerTools(
     "testneo_run_generated_test_pipeline",
     {
       description:
-        "End-to-end: execute a generated test (confirm), poll until terminal, return analytics summary + step-level execution, optional failure triage bundle, and project pass/fail trend. Prefer this over manually chaining execute → watch → get_execution_status → get_execution_summary.",
-      inputSchema: z.object({
-        test_case_id: z.number().int().positive(),
-        confirm: z.boolean().default(false),
-        idempotency_key: z.string().min(8).max(128).optional(),
-        environment_id: z.number().int().positive().optional(),
-        environment_name: z.string().min(1).optional(),
-        max_polls: z.number().int().min(1).max(120).default(40),
-        poll_interval_ms: z.number().int().min(500).max(10000).default(1500),
-        include_steps: z.boolean().default(true),
-        include_failure_bundle_on_fail: z.boolean().default(true),
-        include_project_trend: z.boolean().default(true),
-        trend_range: z.enum(["1d", "7d", "30d", "90d"]).default("30d"),
-        trend_limit: z.number().int().min(10).max(500).default(200),
-        failure_logs_limit: z.number().int().min(20).max(500).default(150),
-        failure_event_limit: z.number().int().min(5).max(50).default(20),
-        include_nlp_patch_suggestion: z.boolean().default(true),
-      }),
+        "End-to-end: execute a generated test by test_case_id OR (project_id + name_query), poll until terminal, return analytics summary + step-level execution, optional failure triage bundle, and project pass/fail trend. POST /api/web/v1/test-cases/{id}/execute sends use_agent when local+prefer-local (same as testneo_execute_generated_test_case). name_match_mode: auto|exact|substring. Optional wait_for_agent_seconds for preflight.",
+      inputSchema: z
+        .object({
+          test_case_id: z.number().int().positive().optional(),
+          project_id: z.number().int().positive().optional(),
+          name_query: z.string().min(1).max(500).optional(),
+          name_match_mode: z.enum(["auto", "exact", "substring"]).default("auto"),
+          confirm: z.boolean().default(false),
+          idempotency_key: z.string().min(8).max(128).optional(),
+          environment_id: z.number().int().positive().optional(),
+          environment_name: z.string().min(1).optional(),
+          wait_for_agent_seconds: z.number().int().min(0).max(300).optional(),
+          max_polls: z.number().int().min(1).max(120).default(40),
+          poll_interval_ms: z.number().int().min(500).max(10000).default(1500),
+          include_steps: z.boolean().default(true),
+          include_failure_bundle_on_fail: z.boolean().default(true),
+          include_project_trend: z.boolean().default(true),
+          trend_range: z.enum(["1d", "7d", "30d", "90d"]).default("30d"),
+          trend_limit: z.number().int().min(10).max(500).default(200),
+          failure_logs_limit: z.number().int().min(20).max(500).default(150),
+          failure_event_limit: z.number().int().min(5).max(50).default(20),
+          include_nlp_patch_suggestion: z.boolean().default(true),
+        })
+        .superRefine((data, ctx) => {
+          const hasId = data.test_case_id != null && data.test_case_id > 0;
+          const hasName = data.project_id != null && data.project_id > 0 && !!data.name_query?.trim();
+          if (!hasId && !hasName) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "Provide test_case_id OR (project_id + name_query).",
+              path: [],
+            });
+          }
+        }),
     },
     async ({
       test_case_id,
+      project_id,
+      name_query,
+      name_match_mode,
       confirm,
       idempotency_key,
       environment_id,
@@ -2921,7 +3861,17 @@ export function registerTools(
       failure_logs_limit,
       failure_event_limit,
       include_nlp_patch_suggestion,
+      wait_for_agent_seconds,
     }) => {
+      const resolved = await resolveTestCaseIdForExecuteInput({
+        test_case_id,
+        project_id,
+        name_query,
+        name_match_mode,
+      });
+      if (!resolved.ok) return result(asText(resolved.payload));
+      const execId = resolved.test_case_id;
+
       if (!confirm) {
         return result(
           asText({
@@ -2929,8 +3879,11 @@ export function registerTools(
             mode: "preview",
             message:
               "Set confirm=true to run the full pipeline: execute test → wait for completion → return report (analytics_summary, execution with steps, failure_bundle on failure, project_trend).",
-            test_case_id,
+            test_case_id: execId,
+            name_resolution: resolved.name_resolution,
             requires_env: "TESTNEO_MCP_ALLOW_WRITE=true for execution",
+            wait_for_agent_seconds: wait_for_agent_seconds ?? null,
+            wait_for_agent_ms_env: batchExecutionDefaults.waitForAgentMs,
           })
         );
       }
@@ -2938,7 +3891,7 @@ export function registerTools(
         return result("Write tools are disabled. Set TESTNEO_MCP_ALLOW_WRITE=true to run the pipeline.");
       }
       const idem = replayOrConflict("testneo_run_generated_test_pipeline", idempotency_key, {
-        test_case_id,
+        test_case_id: execId,
         environment_id: environment_id ?? null,
         environment_name: environment_name ?? null,
         max_polls,
@@ -2948,18 +3901,25 @@ export function registerTools(
         include_project_trend,
         trend_range,
         trend_limit,
+        wait_for_agent_seconds: wait_for_agent_seconds ?? null,
       });
       if (idem.blocked) return idem.blocked;
-      const blocked = await gateProjectExecutableFromTestCase(test_case_id, {
+      const blocked = await gateProjectExecutableFromTestCase(execId, {
         toolName: "testneo_run_generated_test_pipeline",
       });
       if (blocked) return blocked;
+
+      const agentPf = await preflightLocalAgentForSingleTestExecute(
+        wait_for_agent_seconds,
+        "testneo_mcp_execute_preflight.v1"
+      );
+      if (!agentPf.proceed) return agentPf.blocked;
 
       let projectIdFallback: number | undefined;
       if (include_project_trend) {
         try {
           const tc = await client.request<Record<string, unknown>>(
-            `/api/web/v1/test-cases/${encodeURIComponent(String(test_case_id))}`
+            `/api/web/v1/test-cases/${encodeURIComponent(String(execId))}`
           );
           const pid = tc.project_id ?? tc.projectId;
           const n = typeof pid === "number" ? pid : Number(pid);
@@ -2970,7 +3930,7 @@ export function registerTools(
       }
 
       const response = await client.request<Record<string, unknown>>(
-        `/api/web/v1/test-cases/${encodeURIComponent(String(test_case_id))}/execute`,
+        `/api/web/v1/test-cases/${encodeURIComponent(String(execId))}/execute`,
         {
           method: "POST",
           body: {
@@ -2978,6 +3938,7 @@ export function registerTools(
             trigger_reason: "human_approved_generated_test_pipeline",
             ...(environment_id != null ? { environment_id } : {}),
             ...(environment_name ? { environment_name } : {}),
+            ...(agentPf.use_agent ? { use_agent: true } : {}),
           },
         }
       );
@@ -2987,7 +3948,7 @@ export function registerTools(
           asText({
             contract_version: "execution_pipeline.v1",
             error: "Could not read execution_id from execute response",
-            test_case_id,
+            test_case_id: execId,
             execute_response: response,
           })
         );
@@ -3009,7 +3970,12 @@ export function registerTools(
       });
 
       const payload = {
-        test_case_id,
+        contract_version: "execution_pipeline.v1",
+        test_case_id: execId,
+        name_resolution: resolved.name_resolution,
+        routing: { use_agent: agentPf.use_agent },
+        ...(agentPf.agent_wait ? { agent_wait: agentPf.agent_wait } : {}),
+        ...(agentPf.agent_snapshot ? { agent_preflight: agentPf.agent_snapshot } : {}),
         execute_response: response,
         pipeline,
       };
@@ -3411,7 +4377,7 @@ export function registerTools(
           client.longRequestTimeoutMs
         );
       } catch (e) {
-        const fmt = formatTestNeoApiFailure(e);
+        const fmt = formatApiFailure(e);
         if (fmt) return fmt;
         throw e;
       }

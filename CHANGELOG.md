@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`ui_navigation`** (`contract_version: "testneo_mcp_execution_ui.v1"`) on execution-related tools: **`execution_dashboard_url`**, **`executions_list_url`**, **`api_execution_details_url`**, **`api_origin`** (API host) vs **`origin`** (SPA host); also **`testneo_get_failure_bundle`** and **`testneo_get_execution_logs`**. **`TESTNEO_WEB_APP_URL`** / **`TESTNEO_WEB_APP_PATH_PREFIX`** override SPA links; when **`TESTNEO_BASE_URL`** is local **`…:8001`** and **`TESTNEO_WEB_APP_URL`** is unset, SPA links default to **`…:5173`** (Vite). **`/web/test-runner/execution/:id`** routes in the monorepo frontend match **`TESTNEO_WEB_APP_PATH_PREFIX=/web`**.
+- **`testneo_find_test_cases`:** read-only **`GET /api/web/v1/test-cases/?search=`** + **`project_id`** — browse **`id` / `name` / `tags`** before execute.
+- **`testneo_execute_generated_test_case`** / **`testneo_run_generated_test_pipeline`:** run by **`test_case_id`** **or** **`project_id` + `name_query`** (optional **`name_match_mode`**: `auto` \| `exact` \| `substring`); responses include **`name_resolution`** when resolved from name.
 - **`apiErrorHints`:** MCP tool failures on HTTP **403/429** prepend a short **`### TestNeo API blocked…`** summary (subscription, limits, trial) plus `mcp_client_summary` in JSON for Cursor.
 - `scripts/api-error-hints-check.mjs` (runs in **`npm test`** after build).
 - Public mirror sync script: `scripts/sync-public-mcp-repo.sh`.
