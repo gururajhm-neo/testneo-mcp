@@ -14,6 +14,9 @@ npm run build
 ## 2) Environment variables
 
 - `TESTNEO_BASE_URL` — **`https://app.testneo.ai`** for TestNeo Cloud; or your self-hosted API URL (e.g. `http://localhost:8001` only for local API development).
+- `TESTNEO_WEB_APP_URL` (optional) — browser origin for **`ui_navigation`** links (e.g. `http://localhost:5173` when the API is on `:8001`). Cloud: usually same as `TESTNEO_BASE_URL`.
+- `TESTNEO_WEB_APP_PATH_PREFIX` (optional) — e.g. `/web` for `…/web/test-runner/execution/…` URLs.
+- **`testneo_ai_assistant_query`** — same Web AI as **`/web/ai-assistant`**: `project_id` + `query`, optional unified `context_id` / `context_name_query`.
 - `TESTNEO_API_KEY` — create in the app after [signup](https://app.testneo.ai/signup).
 - Optional: `TESTNEO_MCP_ALLOW_WRITE=true` to enable guarded write tools (still require `confirm=true` per call).
 - Optional batch / agent routing: `TESTNEO_MCP_DEFAULT_EXECUTION_MODE`, `TESTNEO_MCP_DEFAULT_EXECUTION_PLATFORM`, `TESTNEO_MCP_PREFER_LOCAL_AGENT`, `TESTNEO_MCP_REQUIRE_LOCAL_AGENT_FOR_BATCH`, `TESTNEO_MCP_WAIT_FOR_AGENT_MS`, `TESTNEO_MCP_OPEN_AGENT_SETUP_ON_AGENT_FAILURE` (see package `docs/MCP_TOOL_REFERENCE.md`).

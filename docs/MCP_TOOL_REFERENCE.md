@@ -1,15 +1,16 @@
 # TestNeo MCP Tool Reference
 
-**Canonical document** (for **testneo.ai** / marketing / git): **`docs/mcp-tool-reference.md`** in the TestNeo API monorepo. The MCP server in **`packages/testneo-mcp-server`** exposes **41** tools, all prefixed with `testneo_`. The **`@testneo/mcp-server`** npm package ships the **same** Markdown as **`packages/testneo-mcp-server/docs/MCP_TOOL_REFERENCE.md`** — copy from this file before publish (see **Website and npm package sync** at the end of this page).
+**Canonical document** (for **testneo.ai** / marketing / git): **`docs/mcp/mcp-tool-reference.md`** in the TestNeo API monorepo. The MCP server in **`packages/testneo-mcp-server`** exposes **42** tools, all prefixed with `testneo_`. The **`@testneo/mcp-server`** npm package ships the **same** Markdown as **`packages/testneo-mcp-server/docs/MCP_TOOL_REFERENCE.md`** — copy from this file before publish (see **Website and npm package sync** at the end of this page).
 
 **Agent workflows:** `qa_intelligence_workflow`, `triage_failure_workflow`, and `rerun_decision_workflow` are **not** separate tool names. They are values of **`workflow_type`** on **`testneo_run_agent_workflow`** (see [Agent workflow tool](#agent-workflow-tool-testneo_run_agent_workflow)).
 
 ## Alphabetical index (all tools)
 
-`testneo_api_project_openapi_impact` · `testneo_api_project_upload_openapi` · `testneo_apply_route_hardening` · `testneo_bootstrap_web_mcp_project` · `testneo_create_web_project` · `testneo_create_web_project_environment` · `testneo_execute_generated_test_case` · `testneo_export_playwright_spec` · `testneo_figma_image_to_tests_workflow` · `testneo_figma_to_tests_workflow` · `testneo_find_test_cases` · `testneo_generate_tests_from_context` · `testneo_get_execution_logs` · `testneo_get_execution_status` · `testneo_get_execution_summary` · `testneo_get_failure_bundle` · `testneo_get_local_agent_status` · `testneo_get_pass_fail_trend` · `testneo_get_project_route_map` · `testneo_get_unified_context_by_name` · `testneo_ingest_figma_context` · `testneo_list_projects` · `testneo_list_recent_executions` · `testneo_list_tests_by_tags` · `testneo_list_unified_contexts` · `testneo_preview_generated_tests` · `testneo_rerun_failed` · `testneo_run_agent_workflow` · `testneo_run_batch_by_tags` · `testneo_run_generated_test_pipeline` · `testneo_run_playwright_spec_preview` · `testneo_search_failures` · `testneo_set_project_route_map` · `testneo_swagger_impact_actions` · `testneo_swagger_impact_analysis` · `testneo_swagger_preview` · `testneo_swagger_upload_and_generate` · `testneo_trigger_playwright_execution` · `testneo_update_test_case_nlp` · `testneo_validate_connection` · `testneo_watch_execution`
+`testneo_ai_assistant_query` · `testneo_api_project_openapi_impact` · `testneo_api_project_upload_openapi` · `testneo_apply_route_hardening` · `testneo_bootstrap_web_mcp_project` · `testneo_create_web_project` · `testneo_create_web_project_environment` · `testneo_execute_generated_test_case` · `testneo_export_playwright_spec` · `testneo_figma_image_to_tests_workflow` · `testneo_figma_to_tests_workflow` · `testneo_find_test_cases` · `testneo_generate_tests_from_context` · `testneo_get_execution_logs` · `testneo_get_execution_status` · `testneo_get_execution_summary` · `testneo_get_failure_bundle` · `testneo_get_local_agent_status` · `testneo_get_pass_fail_trend` · `testneo_get_project_route_map` · `testneo_get_unified_context_by_name` · `testneo_ingest_figma_context` · `testneo_list_projects` · `testneo_list_recent_executions` · `testneo_list_tests_by_tags` · `testneo_list_unified_contexts` · `testneo_preview_generated_tests` · `testneo_rerun_failed` · `testneo_run_agent_workflow` · `testneo_run_batch_by_tags` · `testneo_run_generated_test_pipeline` · `testneo_run_playwright_spec_preview` · `testneo_search_failures` · `testneo_set_project_route_map` · `testneo_swagger_impact_actions` · `testneo_swagger_impact_analysis` · `testneo_swagger_preview` · `testneo_swagger_upload_and_generate` · `testneo_trigger_playwright_execution` · `testneo_update_test_case_nlp` · `testneo_validate_connection` · `testneo_watch_execution`
 
 ## Read/Analysis Tools
 - `testneo_validate_connection`
+- `testneo_ai_assistant_query` — **Web AI Assistant** parity: `POST /api/web/v1/etl/ai-assistant/query` with `project_id`, natural-language `query`, optional **`context_id`** or **`context_name_query`** (+ `context_match_mode`), optional **`response_style`** (`concise` \| `detailed`), optional **`recommend_context`** / **`rag_context`** JSON bodies (same as UI). Counts against Web AI chat limits. Returns **`assistant_reply`**, **`product_navigation.web_ai_assistant_url`**, and **`upstream`** (full API payload including `usage` when present). **Prompt library & personas:** [Web AI Assistant & prompt library](./MCP_AI_ASSISTANT_AND_PROMPTS.md).
 - `testneo_get_local_agent_status` — self-hosted agent registered + heartbeat; **`setup_url`** for install/connect (same origin as **`TESTNEO_BASE_URL`**).
 - `testneo_list_projects`
 - `testneo_get_project_route_map`
@@ -63,8 +64,8 @@ These require write enablement + confirmation where `confirm` is supported:
 | `testneo_create_web_project` | `POST /api/web/v1/projects`; requires **`website_url`**. MCP sends **`create_default_environment`** (default **true**), optional **`initial_environment`**, **`environment_username`** / **`environment_password`**, **`project_environment_name`**, **`base_url_variable_name`** — **single transaction** when the API supports the extended schema. Otherwise create env with **`testneo_create_web_project_environment`**. New projects: **`lighthouse_enabled`** default **true** when the API includes that merge. |
 | `testneo_create_web_project_environment` | `POST /api/web/v1/projects/{id}/environments`; **`variables`** array (`base_url`, `username`, `password` with **`is_secret: true`** on password). Use as **fallback** if inline create did not persist env rows. |
 | `testneo_bootstrap_web_mcp_project` | Validates → **`POST /api/web/v1/projects`** with optional inline default env + **`base_url`** (and optional credentials) when **`add_base_url_variable`** is true; returns **`contract_version: web_project_bootstrap.v1`**. |
-| `testneo_execute_generated_test_case` | Pass **`test_case_id`** OR **`project_id` + `name_query`** (optional **`name_match_mode`**: `auto` \| `exact` \| `substring`). Optional **`environment_id`** / **`environment_name`**, **`wait_for_agent_seconds`**. With **`TESTNEO_MCP_DEFAULT_EXECUTION_MODE=local`** and **`TESTNEO_MCP_PREFER_LOCAL_AGENT`**, POST body includes **`use_agent: true`** so the API queues **AgentJob** (same routing idea as batch). |
-| `testneo_run_generated_test_pipeline` | Preferred full run + report (`contract_version: execution_pipeline.v1`). Same **`test_case_id`** or **`project_id` + `name_query`** resolution and **`use_agent`** / **`wait_for_agent_seconds`** behavior as **`testneo_execute_generated_test_case`** on the initial execute step. |
+| `testneo_execute_generated_test_case` | Pass **`test_case_id`** OR **`project_id` + `name_query`** (optional **`name_match_mode`**: `auto` \| `exact` \| `substring`). Optional **`environment_id`** / **`environment_name`**, **`wait_for_agent_seconds`**. With **`TESTNEO_MCP_DEFAULT_EXECUTION_MODE=local`** and **`TESTNEO_MCP_PREFER_LOCAL_AGENT`**, POST body includes **`use_agent: true`** so the API queues **AgentJob** (same routing idea as batch). Response may include **`ui_navigation`** (browser deep links; see [Execution UI deep links](#execution-ui-deep-links-ui_navigation)). |
+| `testneo_run_generated_test_pipeline` | Preferred full run + report (`contract_version: execution_pipeline.v1`). Same **`test_case_id`** or **`project_id` + `name_query`** resolution and **`use_agent`** / **`wait_for_agent_seconds`** behavior as **`testneo_execute_generated_test_case`** on the initial execute step. **`pipeline.ui_navigation`** mirrors execute when an execution id is known. |
 | `testneo_run_batch_by_tags` | **`POST /api/web/v1/multi-test-runs/create`** + **`…/execute`** for tests matching tags; with **`TESTNEO_MCP_DEFAULT_EXECUTION_MODE=local`** and **`TESTNEO_MCP_PREFER_LOCAL_AGENT`**, sets **`use_agent`**. Polls **`/agents/my-agent`** for up to **`TESTNEO_MCP_WAIT_FOR_AGENT_MS`** or **`wait_for_agent_seconds`** before failing when **`TESTNEO_MCP_REQUIRE_LOCAL_AGENT_FOR_BATCH`** is on; optional **`TESTNEO_MCP_OPEN_AGENT_SETUP_ON_AGENT_FAILURE`** opens **`setup_url`** on hard failure. |
 | `testneo_rerun_failed` | |
 | `testneo_trigger_playwright_execution` | Raw NLP → SDK execute. |
@@ -138,6 +139,34 @@ Execution-oriented MCP outputs now include a stable envelope for deterministic a
   - `testneo_run_generated_test_pipeline` (`pipeline.analytics_summary`, `pipeline.execution`, embedded watch timeline)
 
 This reduces downstream prompt/parser drift when backend status strings vary (`completed`, `success`, `error`, etc.).
+
+---
+
+## Execution UI deep links (`ui_navigation`)
+
+Several tools return **`ui_navigation`** with **`contract_version: "testneo_mcp_execution_ui.v1"`** so agents can open the same execution views as the TestNeo web app or VS Code extension (without guessing host/port).
+
+| Field | Meaning |
+| --- | --- |
+| **`origin`** | Browser-facing SPA origin used to build dashboard URLs (often Vite **`http://localhost:5173`** in local dev). |
+| **`api_origin`** | API origin used for **`api_execution_details_url`** (same host as **`TESTNEO_BASE_URL`**). |
+| **`execution_dashboard_url`** | Primary human link: execution detail (steps, video when available). |
+| **`executions_list_url`** | In-app runs list. |
+| **`api_execution_details_url`** | JSON details path on the API host. |
+| **`note`** | When analytics lags behind a local agent, the dashboard is still the best place to confirm status. |
+
+**Tools that include `ui_navigation`:** `testneo_execute_generated_test_case` (when the execute response includes an execution id), `testneo_run_generated_test_pipeline` (nested under **`pipeline`**), `testneo_watch_execution`, `testneo_get_execution_status`, `testneo_get_execution_summary`, `testneo_get_execution_logs`, `testneo_get_failure_bundle`.
+
+**MCP env (optional, parsed in `packages/testneo-mcp-server/src/config.ts`):**
+
+| Variable | Role |
+| --- | --- |
+| **`TESTNEO_WEB_APP_URL`** | SPA origin for **`execution_dashboard_url`** / **`executions_list_url`**. If unset and **`TESTNEO_BASE_URL`** is **`http://localhost:8001`** or **`http://127.0.0.1:8001`**, MCP defaults SPA links to the **same host on port 5173** (typical Vite dev). Otherwise defaults to **`TESTNEO_BASE_URL`**. |
+| **`TESTNEO_WEB_APP_PATH_PREFIX`** | e.g. **`/web`** → paths like **`…/web/test-runner/execution/…`**; omit for **`…/test-runner/execution/…`** at the app root. |
+
+**Hosted cloud:** set **`TESTNEO_WEB_APP_URL`** to the same origin as the product (e.g. **`https://app.testneo.ai`**) when you want links explicit in **`mcp.json`**; see **`docs/mcp.json.example`**.
+
+**Scope:** MCP-only response enrichment and optional client env. **No change** to TestNeo API routes, auth, or execution semantics on the server.
 
 ---
 
@@ -243,6 +272,29 @@ Recommended for retries from CI agents and orchestrated prompts.
 }
 ```
 
+### `testneo_ai_assistant_query`
+
+**With unified context (same as selecting context in `/web/ai-assistant`):**
+
+```json
+{
+  "project_id": 47,
+  "context_name_query": "figma checkout",
+  "query": "What interactive elements on this screen should we prioritize for automated UI tests?",
+  "response_style": "detailed"
+}
+```
+
+**Project-wide (no context — analytics-style questions):**
+
+```json
+{
+  "project_id": 47,
+  "query": "Give me an executive summary of test health for this project.",
+  "response_style": "concise"
+}
+```
+
 ### `testneo_generate_tests_from_context`
 
 Do **not** scrape numeric ids from the UI when you have a label: call **`testneo_get_unified_context_by_name`** with **`name_query`** (e.g. `"figma checkout"` for a context named like **`Figma — Checkout flow`**), then pass its **`resolved_context_id`** as the **`context_id`** field below. The sample value **`203`** is illustrative only.
@@ -275,7 +327,7 @@ Do **not** scrape numeric ids from the UI when you have a label: call **`testneo
 }
 ```
 
-With **`auto_align_saucedemo_route_map`** **`true`** **and** explicit SauceDemo **`auth_preamble`**, MCP applies the SauceDemo phrase map when env has **`TESTNEO_ROUTE_PROFILE=none`** and no **`TESTNEO_ROUTE_MAP_JSON`**. For other apps, set **`auto_align_saucedemo_route_map: false`** or supply **`TESTNEO_ROUTE_MAP_JSON`** / **`testneo_set_project_route_map`** for Navigate phrase → path. See [Non–Sauce Demo sites](./mcp-non-saucedemo-testing.md).
+With **`auto_align_saucedemo_route_map`** **`true`** **and** explicit SauceDemo **`auth_preamble`**, MCP applies the SauceDemo phrase map when env has **`TESTNEO_ROUTE_PROFILE=none`** and no **`TESTNEO_ROUTE_MAP_JSON`**. For other apps, set **`auto_align_saucedemo_route_map: false`** or supply **`TESTNEO_ROUTE_MAP_JSON`** / **`testneo_set_project_route_map`** for Navigate phrase → path. See [Non–Sauce Demo sites](./MCP_NON_SAUCE_DEMO_TESTING.md).
 
 ### `testneo_list_unified_contexts`
 ```json
@@ -327,9 +379,9 @@ Matches names like **`Figma — Checkout flow`** when you query `"figma checkout
 
 | Audience | File to use |
 |----------|-------------|
-| **Hosted docs (testneo.ai)** | Publish from monorepo **`docs/mcp-tool-reference.md`** (this canonical file). |
+| **Hosted docs (testneo.ai)** | Publish from monorepo **`docs/mcp/mcp-tool-reference.md`** (this canonical file). |
 | **npm package `@testneo/mcp-server`** | Before release, copy this file to **`packages/testneo-mcp-server/docs/MCP_TOOL_REFERENCE.md`** (see `packages/testneo-mcp-server/scripts/sync-public-mcp-repo.sh` or `scripts/push-public-mirror-local.sh` in that package). |
-| **GitHub mirror** | Same content as the package doc; CI in `.github/workflows/sync-mcp-public-mirror.yml` watches **`docs/mcp-tool-reference.md`**. |
+| **GitHub mirror** | Same content as the package doc; CI in `.github/workflows/sync-mcp-public-mirror.yml` watches **`docs/mcp/mcp-tool-reference.md`**. |
 
-Keeping **one** source of truth (`docs/mcp-tool-reference.md`) avoids drift between the website, npm README, and MCP server bundle.
+Keeping **one** source of truth (`docs/mcp/mcp-tool-reference.md`) avoids drift between the website, npm README, and MCP server bundle.
 

@@ -14,11 +14,14 @@ PKG_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 DEST="${1:-${TESTNEO_MCP_PUBLIC_REPO:-}}"
 MONO_ROOT="$(cd "${PKG_ROOT}/../.." && pwd)"
-if [[ -f "${MONO_ROOT}/docs/mcp-tool-reference.md" ]]; then
-  cp "${MONO_ROOT}/docs/mcp-tool-reference.md" "${PKG_ROOT}/docs/MCP_TOOL_REFERENCE.md"
+if [[ -f "${MONO_ROOT}/docs/mcp/mcp-tool-reference.md" ]]; then
+  cp "${MONO_ROOT}/docs/mcp/mcp-tool-reference.md" "${PKG_ROOT}/docs/MCP_TOOL_REFERENCE.md"
 fi
-if [[ -f "${MONO_ROOT}/docs/mcp-non-saucedemo-testing.md" ]]; then
-  cp "${MONO_ROOT}/docs/mcp-non-saucedemo-testing.md" "${PKG_ROOT}/docs/MCP_NON_SAUCE_DEMO_TESTING.md"
+if [[ -f "${MONO_ROOT}/docs/mcp/mcp-non-saucedemo-testing.md" ]]; then
+  cp "${MONO_ROOT}/docs/mcp/mcp-non-saucedemo-testing.md" "${PKG_ROOT}/docs/MCP_NON_SAUCE_DEMO_TESTING.md"
+fi
+if [[ -f "${MONO_ROOT}/docs/mcp/mcp-ai-assistant-and-prompts.md" ]]; then
+  cp "${MONO_ROOT}/docs/mcp/mcp-ai-assistant-and-prompts.md" "${PKG_ROOT}/docs/MCP_AI_ASSISTANT_AND_PROMPTS.md"
 fi
 
 if [[ -z "${DEST}" ]]; then

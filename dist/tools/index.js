@@ -2747,6 +2747,108 @@ function registerTools(server, deps) {
             ];
         return result(`${leadLines.join("\n")}\n${asText(body)}`);
     });
+    registerTracedTool("testneo_ai_assistant_query", {
+        description: "Same Web AI Assistant as the product UI (/web/ai-assistant): natural-language Q&A over a project, optionally scoped to a unified context (PDF/Figma/requirements ingest). POST /api/web/v1/etl/ai-assistant/query. Pass context_id or context_name_query; omit both for project-wide analytics-style questions. Uses your Web AI chat quota. Optional recommend_context / rag_context match the web request body for AI-Q and document-aware answers.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+            query: zod_1.z.string().min(1).max(32000),
+            context_id: zod_1.z.number().int().positive().optional(),
+            context_name_query: zod_1.z.string().min(1).max(500).optional(),
+            context_match_mode: zod_1.z.enum(["auto", "exact", "substring"]).default("auto"),
+            prefer_context_id: zod_1.z.number().int().positive().optional(),
+            response_style: zod_1.z.enum(["concise", "detailed"]).default("concise"),
+            recommend_context: zod_1.z.record(zod_1.z.string(), zod_1.z.unknown()).optional(),
+            rag_context: zod_1.z.record(zod_1.z.string(), zod_1.z.unknown()).optional(),
+        }),
+    }, async ({ project_id, query, context_id, context_name_query, context_match_mode, prefer_context_id, response_style, recommend_context, rag_context, }) => {
+        let resolvedContextId = context_id ?? null;
+        let context_resolution = null;
+        if (resolvedContextId == null && context_name_query?.trim()) {
+            const payload = await client.request(`/api/v1/web/v1/projects/${encodeURIComponent(String(project_id))}/unified-contexts`);
+            const contexts = parseUnifiedContextListPayload(payload);
+            const resolved = (0, unifiedContextDiscovery_js_1.resolveUnifiedContextByName)(contexts, context_name_query.trim(), context_match_mode, {
+                prefer_context_id,
+            });
+            context_resolution = {
+                name_query: context_name_query.trim(),
+                match_mode: context_match_mode,
+                resolved_context_id: resolved.chosen?.id ?? null,
+                hint: resolved.hint,
+                ambiguity: resolved.chosen == null && resolved.candidates_same_tier.length > 0
+                    ? {
+                        candidate_count: resolved.candidates_same_tier.length,
+                        candidates: resolved.candidates_same_tier.slice(0, 8).map((x) => ({
+                            id: x.id,
+                            name: x.name,
+                        })),
+                    }
+                    : undefined,
+            };
+            if (resolved.chosen?.id != null) {
+                resolvedContextId = resolved.chosen.id;
+            }
+            else {
+                return result(asText({
+                    contract_version: "testneo_mcp_ai_assistant.v1",
+                    project_id,
+                    error: "context_not_resolved",
+                    context_resolution,
+                    hint: "Call testneo_list_unified_contexts or narrow context_name_query / pass prefer_context_id, then retry.",
+                }));
+            }
+        }
+        const queryParams = {
+            project_id,
+            query,
+            responseStyle: response_style,
+        };
+        if (resolvedContextId != null) {
+            queryParams.context_id = String(resolvedContextId);
+        }
+        const body = {};
+        if (recommend_context && Object.keys(recommend_context).length > 0) {
+            body.recommend_context = recommend_context;
+        }
+        if (rag_context && Object.keys(rag_context).length > 0) {
+            body.rag_context = rag_context;
+        }
+        const appOrigin = client.getWebAppBaseUrl().replace(/\/+$/, "");
+        const web_ai_assistant_url = `${appOrigin}/web/ai-assistant`;
+        try {
+            const upstream = await client.request(`/api/web/v1/etl/ai-assistant/query`, {
+                method: "POST",
+                query: queryParams,
+                body: Object.keys(body).length > 0 ? body : {},
+                timeoutMs: client.longRequestTimeoutMs,
+            });
+            const assistantText = typeof upstream.response === "string"
+                ? upstream.response
+                : upstream.response != null
+                    ? JSON.stringify(upstream.response)
+                    : "";
+            return result(asText({
+                contract_version: "testneo_mcp_ai_assistant.v1",
+                project_id,
+                context_id: resolvedContextId,
+                context_resolution,
+                response_style,
+                product_navigation: {
+                    contract_version: "testneo_mcp_product_links.v1",
+                    web_ai_assistant_url,
+                    note: "Open in browser to continue the thread with full RAG UI controls.",
+                },
+                assistant_reply: assistantText,
+                usage: upstream.usage ?? undefined,
+                upstream,
+            }));
+        }
+        catch (e) {
+            const formatted = formatApiFailure(e);
+            if (formatted)
+                return formatted;
+            throw e;
+        }
+    });
     registerTracedTool("testneo_generate_tests_from_context", {
         description: "Generate NLP test cases from an existing unified context (Figma, requirements, etc.). Resolve context via testneo_list_unified_contexts or testneo_get_unified_context_by_name (name_query, not scraped UI ids). Omit auth_preamble for public / no-login apps (default: no SauceDemo login injected, no SauceDemo route auto-align). Pass auth_preamble { enabled:true, preset:'saucedemo' } only for demos against saucedemo.com. Custom maps: TESTNEO_ROUTE_MAP_JSON or testneo_set_project_route_map; optional auto_align_saucedemo_route_map + SauceDemo preset ties route phrases to SauceDemo paths.",
         inputSchema: zod_1.z.object({

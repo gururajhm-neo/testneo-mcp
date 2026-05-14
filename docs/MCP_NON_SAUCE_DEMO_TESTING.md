@@ -18,7 +18,7 @@ SauceLabs’ **Sauce Demo** ([saucedemo.com](https://www.saucedemo.com)) is only
 
 ## Example: generate from context (generic site)
 
-Use **`name_query`** → **`resolved_context_id`** (see [unified context discovery](./mcp-unified-context-discovery.md)). Omit **`auth_preamble`**. Optionally set **`auto_align_saucedemo_route_map: false`** in the tool args for clarity:
+Use **`name_query`** → **`resolved_context_id`** (see [unified context discovery](https://testneo.ai/docs/testneo-mcp.html)). Omit **`auth_preamble`**. Optionally set **`auto_align_saucedemo_route_map: false`** in the tool args for clarity:
 
 ```json
 {

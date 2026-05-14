@@ -3475,6 +3475,139 @@ export function registerTools(
   );
 
   registerTracedTool(
+    "testneo_ai_assistant_query",
+    {
+      description:
+        "Same Web AI Assistant as the product UI (/web/ai-assistant): natural-language Q&A over a project, optionally scoped to a unified context (PDF/Figma/requirements ingest). POST /api/web/v1/etl/ai-assistant/query. Pass context_id or context_name_query; omit both for project-wide analytics-style questions. Uses your Web AI chat quota. Optional recommend_context / rag_context match the web request body for AI-Q and document-aware answers.",
+      inputSchema: z.object({
+        project_id: z.number().int().positive(),
+        query: z.string().min(1).max(32000),
+        context_id: z.number().int().positive().optional(),
+        context_name_query: z.string().min(1).max(500).optional(),
+        context_match_mode: z.enum(["auto", "exact", "substring"]).default("auto"),
+        prefer_context_id: z.number().int().positive().optional(),
+        response_style: z.enum(["concise", "detailed"]).default("concise"),
+        recommend_context: z.record(z.string(), z.unknown()).optional(),
+        rag_context: z.record(z.string(), z.unknown()).optional(),
+      }),
+    },
+    async ({
+      project_id,
+      query,
+      context_id,
+      context_name_query,
+      context_match_mode,
+      prefer_context_id,
+      response_style,
+      recommend_context,
+      rag_context,
+    }) => {
+      let resolvedContextId: number | null = context_id ?? null;
+      let context_resolution: Record<string, unknown> | null = null;
+
+      if (resolvedContextId == null && context_name_query?.trim()) {
+        const payload = await client.request<unknown>(
+          `/api/v1/web/v1/projects/${encodeURIComponent(String(project_id))}/unified-contexts`
+        );
+        const contexts = parseUnifiedContextListPayload(payload);
+        const resolved = resolveUnifiedContextByName(contexts, context_name_query.trim(), context_match_mode, {
+          prefer_context_id,
+        });
+        context_resolution = {
+          name_query: context_name_query.trim(),
+          match_mode: context_match_mode,
+          resolved_context_id: resolved.chosen?.id ?? null,
+          hint: resolved.hint,
+          ambiguity:
+            resolved.chosen == null && resolved.candidates_same_tier.length > 0
+              ? {
+                  candidate_count: resolved.candidates_same_tier.length,
+                  candidates: resolved.candidates_same_tier.slice(0, 8).map((x) => ({
+                    id: x.id,
+                    name: x.name,
+                  })),
+                }
+              : undefined,
+        };
+        if (resolved.chosen?.id != null) {
+          resolvedContextId = resolved.chosen.id;
+        } else {
+          return result(
+            asText({
+              contract_version: "testneo_mcp_ai_assistant.v1",
+              project_id,
+              error: "context_not_resolved",
+              context_resolution,
+              hint: "Call testneo_list_unified_contexts or narrow context_name_query / pass prefer_context_id, then retry.",
+            })
+          );
+        }
+      }
+
+      const queryParams: Record<string, string | number | boolean | undefined> = {
+        project_id,
+        query,
+        responseStyle: response_style,
+      };
+      if (resolvedContextId != null) {
+        queryParams.context_id = String(resolvedContextId);
+      }
+
+      const body: Record<string, unknown> = {};
+      if (recommend_context && Object.keys(recommend_context).length > 0) {
+        body.recommend_context = recommend_context;
+      }
+      if (rag_context && Object.keys(rag_context).length > 0) {
+        body.rag_context = rag_context;
+      }
+
+      const appOrigin = client.getWebAppBaseUrl().replace(/\/+$/, "");
+      const web_ai_assistant_url = `${appOrigin}/web/ai-assistant`;
+
+      try {
+        const upstream = await client.request<Record<string, unknown>>(
+          `/api/web/v1/etl/ai-assistant/query`,
+          {
+            method: "POST",
+            query: queryParams,
+            body: Object.keys(body).length > 0 ? body : {},
+            timeoutMs: client.longRequestTimeoutMs,
+          }
+        );
+
+        const assistantText =
+          typeof upstream.response === "string"
+            ? upstream.response
+            : upstream.response != null
+              ? JSON.stringify(upstream.response)
+              : "";
+
+        return result(
+          asText({
+            contract_version: "testneo_mcp_ai_assistant.v1",
+            project_id,
+            context_id: resolvedContextId,
+            context_resolution,
+            response_style,
+            product_navigation: {
+              contract_version: "testneo_mcp_product_links.v1",
+              web_ai_assistant_url,
+              note: "Open in browser to continue the thread with full RAG UI controls.",
+            },
+            assistant_reply: assistantText,
+            usage: upstream.usage ?? undefined,
+            upstream,
+          })
+        );
+      } catch (e) {
+        const formatted = formatApiFailure(e);
+        if (formatted) return formatted;
+        throw e;
+      }
+    }
+  );
+
+  registerTracedTool(
     "testneo_generate_tests_from_context",
     {
       description:
