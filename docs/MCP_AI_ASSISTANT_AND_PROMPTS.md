@@ -2,8 +2,30 @@
 
 **Purpose:** Publish-ready guide for using **`testneo_ai_assistant_query`** from MCP (same backend as the product **Web AI Assistant** at **`/web/ai-assistant`**) plus copy-paste **prompts** for document Q&A, analytics, and persona-driven release reviews.
 
+**Docs alignment:** Maintained with [Golden prompt packs](./mcp-prompt-packs.md) (**At a glance** journey, **Question combinations**, **Persona prompts — Web AI Assistant**). **Last aligned:** 2026-05-12.
+
 **Canonical location:** `docs/mcp/mcp-ai-assistant-and-prompts.md` in the TestNeo API monorepo.  
 **Related:** [MCP tool reference](./MCP_TOOL_REFERENCE.md) · Quickstart, prompt packs, and context discovery: [testneo.ai — MCP docs](https://testneo.ai/docs/testneo-mcp.html)
+
+---
+
+## Shareable journey (non-technical)
+
+Same story as [Golden prompt packs — At a glance](./mcp-prompt-packs.md#at-a-glance-one-journey-shareable), in one picture:
+
+```mermaid
+flowchart LR
+  A[Connect your AI IDE] --> B[Project + app URL]
+  B --> C[Design or API context in TestNeo]
+  C --> D{Ask or automate?}
+  D -->|Ask| E[Plain English Q and A]
+  D -->|Automate| F[NLP tests from context]
+  E --> G[Browser run + insights]
+  F --> G
+  G --> H[Team sees results]
+```
+
+**MCP angle:** the IDE calls TestNeo tools so the assistant uses **the same data** as the product; sensitive steps stay **guarded**. Install: [MCP quickstart](./mcp-quickstart.md).
 
 ---
 
@@ -145,33 +167,95 @@ Give an executive summary of test health for this project in under 200 words. Ex
 
 ## Persona packs (same tool; tune the `query`)
 
-Replace **`<PROJECT_ID>`** in MCP calls. Add **`context_name_query`** when the persona should read a specific document context.
+Use these **verbatim** in the **Web AI Assistant** query box (pick project + optional context in the UI). In **Cursor / MCP**, the same strings go in **`query`** on **`testneo_ai_assistant_query`** — copy-ready **`Call …`** lines live in [Golden prompt packs — Persona prompts: Web AI Assistant](./mcp-prompt-packs.md#persona-prompts-web-ai-assistant-testneo_ai_assistant_query).
+
+Replace **`<area>`** or **`<design fragment>`** with your wording.
 
 ### Engineering / QA manager
 
-- “**Can we release this week?** Give **go / no-go / go-with-conditions** and **three measurable** exit criteria.”  
-- “If we slip one week, what **quality debt** do we pay — rank by severity.”  
-- “Draft a **150-word stakeholder email**: current quality story + **one** decision you need from leadership.”
+```text
+Act as an engineering director. Can we release this week? Answer go / no-go / go-with-conditions and list three measurable exit criteria. If you lack data, say what is missing.
+```
+
+```text
+If we slip quality work by one sprint, what debt do we pay—rank top 5 by severity for leadership.
+```
+
+```text
+Draft a 150-word stakeholder email: current quality story, top risk, and one decision we need from leadership this week.
+```
 
 ### QA lead
 
-- “Propose a **7-day test plan** for release: goals, scope, environments, **exit criteria**.”  
-- “Which **failure modes** should we target first — rank by **customer impact × likelihood × cost to verify** (qualitative is fine).”  
-- “What should **daily standup** ask about quality this week?”
+```text
+Propose a 7-day pre-release test plan: goals, scope, environments, exit criteria, and daily checkpoints.
+```
+
+```text
+Which failure modes should we target first—rank by customer impact × likelihood × cost to verify (qualitative is fine).
+```
+
+```text
+What three questions should daily standup ask about quality this week based on project signals only?
+```
 
 ### Developer
 
-- “What **highest-leverage** tests should we add before we refactor `<area>` — avoid overlapping existing coverage.”  
-- “List **observable assertions** that belong in UI tests vs API-only checks for the same flows.”
+```text
+Before we refactor the <area> module, what highest-leverage automated tests should we add—avoid overlapping coverage we likely already have.
+```
+
+```text
+List observable assertions that belong in UI tests vs API-only checks for the same user flows.
+```
+
+```text
+Give a bullet checklist of edge cases for login and session handling—conceptual only, no execution IDs needed.
+```
 
 ### Product / program
 
-- “**Scope-risk review:** what did we promise in the requirements that is **hard to verify** automatically?”  
-- “**Launch checklist** beyond ‘all tests green’ — what must be true for support and sales?”
+```text
+Scope-risk review: what did we promise in the requirements that is hard to verify automatically? List each with one mitigation.
+```
+
+```text
+Launch checklist beyond all tests green: what must be true for support, sales, and compliance before we announce?
+```
+
+```text
+In five bullets: what should roadmap cut or defer if quality is the gating concern this month?
+```
 
 ### Security / privacy (document-heavy contexts)
 
-- “From this context, list **PII touchpoints** and **trust boundaries**; what tests prove we do not leak data across boundaries?”
+```text
+From this context, list PII touchpoints and trust boundaries; what tests prove we do not leak data across boundaries?
+```
+
+```text
+What abuse or fraud scenarios are implied but not explicitly specified—propose test themes only.
+```
+
+### Executive / sponsor
+
+```text
+60-second readout for a non-technical exec: are we green to grow the team on this product, or should we invest in stabilization first?
+```
+
+```text
+One-page brief: customer-visible quality story, dollarized risk framing (qualitative), and two investment options with tradeoffs.
+```
+
+### Designer / UX
+
+```text
+List ambiguous UI states or microcopy that will confuse QA automation—suggest clarifications we should add to the design file.
+```
+
+```text
+Top five accessibility or empty-state risks implied by this design—short bullets only.
+```
 
 ---
 
@@ -232,4 +316,5 @@ Replace **`<PROJECT_ID>`** in MCP calls. Add **`context_name_query`** when the p
 
 ## Changelog (documentation)
 
+- **2026-05-12** — **Docs alignment** with [Golden prompt packs](./mcp-prompt-packs.md): shareable journey diagram, expanded **Persona packs** (UI `query` text + link to MCP `Call …` lines), clarified sync date.  
 - **2026-05-14** — Initial publish: **`testneo_ai_assistant_query`**, prompt library, persona packs, data-backed release pattern.
