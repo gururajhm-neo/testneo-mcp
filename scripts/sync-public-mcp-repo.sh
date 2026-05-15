@@ -54,7 +54,8 @@ ai = root / "docs/MCP_AI_ASSISTANT_AND_PROMPTS.md"
 old_related = (
     "**Related:** [MCP tool reference](./mcp-tool-reference.md) · "
     "[MCP quickstart](./mcp-quickstart.md) · [Golden prompt packs](./mcp-prompt-packs.md) · "
-    "[Unified context discovery](./mcp-unified-context-discovery.md)"
+    "[Unified context discovery](./mcp-unified-context-discovery.md) · "
+    "[Customer E2E playbook — Part B5](./mcp-customer-e2e-playbook.md#part-b5-web-ai-assistant-read-only-qa) (copy-paste project → AI flow)"
 )
 new_related = (
     "**Related:** [MCP tool reference](./MCP_TOOL_REFERENCE.md) · "
