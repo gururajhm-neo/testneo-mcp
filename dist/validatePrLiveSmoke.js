@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const promises_1 = require("node:fs/promises");
-const orchestrator_1 = require("@testneo/orchestrator");
+const index_js_1 = require("./orchestration/index.js");
 const config_js_1 = require("./config.js");
 const httpClient_js_1 = require("./httpClient.js");
 const validatePrSmokeHarness_js_1 = require("./validatePrSmokeHarness.js");
@@ -47,7 +47,7 @@ async function run() {
     const config = (0, config_js_1.loadConfig)(process.env);
     const client = new httpClient_js_1.HttpClient(config);
     const diffContent = await resolveDiffContent();
-    const request = orchestrator_1.ValidatePrRequestSchema.parse({
+    const request = index_js_1.ValidatePrRequestSchema.parse({
         project_id: readPositiveIntEnv("TESTNEO_PROJECT_ID", 0),
         repository: {
             owner: process.env.TESTNEO_VALIDATE_PR_REPO_OWNER?.trim() || "live-smoke",

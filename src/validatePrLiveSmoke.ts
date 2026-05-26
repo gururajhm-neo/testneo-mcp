@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { ValidatePrRequestSchema, type ValidatePrRequest } from "@testneo/orchestrator";
+import { ValidatePrRequestSchema, type ValidatePrRequest } from "./orchestration/index.js";
 import { loadConfig } from "./config.js";
 import { HttpClient } from "./httpClient.js";
 import { createValidatePrToolHarness } from "./validatePrSmokeHarness.js";

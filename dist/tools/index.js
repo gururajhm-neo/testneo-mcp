@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerTools = registerTools;
 const zod_1 = require("zod");
 const node_child_process_1 = require("node:child_process");
-const orchestrator_1 = require("@testneo/orchestrator");
+const index_js_1 = require("../orchestration/index.js");
 const httpClient_js_1 = require("../httpClient.js");
 const apiErrorHints_js_1 = require("../apiErrorHints.js");
 const projectRouteMap_js_1 = require("../projectRouteMap.js");
@@ -693,7 +693,7 @@ async function waitForEtlJobCompletion(client, jobId, maxPolls, pollIntervalMs) 
 function registerTools(server, deps) {
     const { client, batchExecutionDefaults } = deps;
     const agentSetupUrl = `${client.getBaseUrl()}/web/agent`;
-    const workflowStore = new orchestrator_1.InMemoryWorkflowStore();
+    const workflowStore = new index_js_1.InMemoryWorkflowStore();
     const impactAnalyzer = {
         analyze: async (request) => {
             if (request.git.diff_content?.trim()) {
@@ -1694,10 +1694,10 @@ function registerTools(server, deps) {
     });
     registerTracedTool("testneo_validate_pr", {
         description: "Run TestNeo PR validation planning from diff or git refs. Returns shared workflow context, impacted tests, planned verification stages, and Claude-ready findings using the new orchestration contracts.",
-        inputSchema: orchestrator_1.ValidatePrRequestSchema,
+        inputSchema: index_js_1.ValidatePrRequestSchema,
     }, async (params) => {
         try {
-            const orchestrator = new orchestrator_1.PrValidationOrchestrator({
+            const orchestrator = new index_js_1.PrValidationOrchestrator({
                 store: workflowStore,
                 impactAnalyzer,
                 testExecutor: testExecutionAdapter,

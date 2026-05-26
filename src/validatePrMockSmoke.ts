@@ -1,4 +1,4 @@
-import type { ValidatePrRequest } from "@testneo/orchestrator";
+import type { ValidatePrRequest } from "./orchestration/index.js";
 import { createValidatePrToolHarness } from "./validatePrSmokeHarness.js";
 
 type MockRequestCall = {

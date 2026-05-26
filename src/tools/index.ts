@@ -11,7 +11,7 @@ import {
   type TestExecutionAdapter,
   type ValidatePrRequest,
   type VerificationFinding,
-} from "@testneo/orchestrator";
+} from "../orchestration/index.js";
 import { HttpClient, TestNeoApiError } from "../httpClient.js";
 import { buildAgentFacingHttpEnvelope, summarizeTestNeoHttpError } from "../apiErrorHints.js";
 import {

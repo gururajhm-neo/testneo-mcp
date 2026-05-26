@@ -1,4 +1,4 @@
-import { type ValidatePrRequest, type ValidatePrResponse } from "@testneo/orchestrator";
+import { type ValidatePrRequest, type ValidatePrResponse } from "./orchestration/index.js";
 import type { PolicyMode } from "./policyEngine.js";
 import type { RouteHardeningRuntimeConfig } from "./routeHardening.js";
 import type { HttpClient } from "./httpClient.js";
