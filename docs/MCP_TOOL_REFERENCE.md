@@ -1,12 +1,12 @@
 # TestNeo MCP Tool Reference
 
-**Canonical document** (for **testneo.ai** / marketing / git): **`docs/mcp/mcp-tool-reference.md`** in the TestNeo API monorepo. The MCP server in **`packages/testneo-mcp-server`** exposes **42** tools, all prefixed with `testneo_`. The **`@testneo/mcp-server`** npm package ships the **same** Markdown as **`packages/testneo-mcp-server/docs/MCP_TOOL_REFERENCE.md`** — copy from this file before publish (see **Website and npm package sync** at the end of this page).
+**Canonical document** (for **testneo.ai** / marketing / git): **`docs/mcp/mcp-tool-reference.md`** in the TestNeo API monorepo. The MCP server in **`packages/testneo-mcp-server`** exposes **47** tools, all prefixed with `testneo_`. The **`@testneo/mcp-server`** npm package ships the **same** Markdown as **`packages/testneo-mcp-server/docs/MCP_TOOL_REFERENCE.md`** — copy from this file before publish (see **Website and npm package sync** at the end of this page).
 
 **Agent workflows:** `qa_intelligence_workflow`, `triage_failure_workflow`, and `rerun_decision_workflow` are **not** separate tool names. They are values of **`workflow_type`** on **`testneo_run_agent_workflow`** (see [Agent workflow tool](#agent-workflow-tool-testneo_run_agent_workflow)).
 
 ## Alphabetical index (all tools)
 
-`testneo_ai_assistant_query` · `testneo_api_project_openapi_impact` · `testneo_api_project_upload_openapi` · `testneo_apply_route_hardening` · `testneo_bootstrap_web_mcp_project` · `testneo_create_web_project` · `testneo_create_web_project_environment` · `testneo_execute_generated_test_case` · `testneo_export_playwright_spec` · `testneo_figma_image_to_tests_workflow` · `testneo_figma_to_tests_workflow` · `testneo_find_test_cases` · `testneo_generate_tests_from_context` · `testneo_get_execution_logs` · `testneo_get_execution_status` · `testneo_get_execution_summary` · `testneo_get_failure_bundle` · `testneo_get_local_agent_status` · `testneo_get_pass_fail_trend` · `testneo_get_project_route_map` · `testneo_get_unified_context_by_name` · `testneo_ingest_figma_context` · `testneo_list_projects` · `testneo_list_recent_executions` · `testneo_list_tests_by_tags` · `testneo_list_unified_contexts` · `testneo_preview_generated_tests` · `testneo_rerun_failed` · `testneo_run_agent_workflow` · `testneo_run_batch_by_tags` · `testneo_run_generated_test_pipeline` · `testneo_run_playwright_spec_preview` · `testneo_search_failures` · `testneo_set_project_route_map` · `testneo_swagger_impact_actions` · `testneo_swagger_impact_analysis` · `testneo_swagger_preview` · `testneo_swagger_upload_and_generate` · `testneo_trigger_playwright_execution` · `testneo_update_test_case_nlp` · `testneo_validate_connection` · `testneo_watch_execution`
+`testneo_ai_assistant_query` · `testneo_api_project_openapi_impact` · `testneo_api_project_upload_openapi` · `testneo_apply_route_hardening` · `testneo_bootstrap_web_mcp_project` · `testneo_create_web_project` · `testneo_create_web_project_environment` · `testneo_delete_saved_api_test_chain` · `testneo_execute_generated_test_case` · `testneo_export_playwright_spec` · `testneo_figma_image_to_tests_workflow` · `testneo_figma_to_tests_workflow` · `testneo_find_test_cases` · `testneo_generate_tests_from_context` · `testneo_get_execution_logs` · `testneo_get_execution_status` · `testneo_get_execution_summary` · `testneo_get_failure_bundle` · `testneo_get_local_agent_status` · `testneo_get_pass_fail_trend` · `testneo_get_project_route_map` · `testneo_get_unified_context_by_name` · `testneo_ingest_figma_context` · `testneo_list_projects` · `testneo_list_recent_executions` · `testneo_list_saved_api_test_chains` · `testneo_list_tests_by_tags` · `testneo_list_unified_contexts` · `testneo_preview_generated_tests` · `testneo_rerun_failed` · `testneo_run_agent_workflow` · `testneo_run_api_test_chain` · `testneo_run_batch_by_tags` · `testneo_run_generated_test_pipeline` · `testneo_run_playwright_spec_preview` · `testneo_save_api_test_chain` · `testneo_search_failures` · `testneo_set_project_route_map` · `testneo_suggest_api_test_chains` · `testneo_swagger_impact_actions` · `testneo_swagger_impact_analysis` · `testneo_swagger_preview` · `testneo_swagger_upload_and_generate` · `testneo_trigger_playwright_execution` · `testneo_update_test_case_nlp` · `testneo_validate_connection` · `testneo_watch_execution`
 
 ## Read/Analysis Tools
 - `testneo_validate_connection`
@@ -15,6 +15,8 @@
 - `testneo_list_projects`
 - `testneo_get_project_route_map`
 - `testneo_list_recent_executions`
+- `testneo_list_saved_api_test_chains` — **`GET /api/web/v1/projects/{id}/api-test-chains`**; user-saved ordered suites (`test_case_ids`).
+- `testneo_suggest_api_test_chains` — **`GET …/api-test-chains/suggest`**; classifier/Swagger-folder **business-flow** chains and phases for NLP API-style web tests (same ordering intelligence as the Multi Test Runner scan).
 - `testneo_list_tests_by_tags` — resolve **`@tag`** / plain tags via **`GET /api/web/v1/test-cases/?tag_filter=`** (per tag); **`tag_match`**: `any` \| `all`.
 - `testneo_find_test_cases` — **`GET /api/web/v1/test-cases/?search=`** + **`project_id`**; returns **`id`**, **`name`**, **`tags`** for UI / disambiguation before execute.
 - `testneo_get_execution_status`
@@ -66,7 +68,10 @@ These require write enablement + confirmation where `confirm` is supported:
 | `testneo_bootstrap_web_mcp_project` | Validates → **`POST /api/web/v1/projects`** with optional inline default env + **`base_url`** (and optional credentials) when **`add_base_url_variable`** is true; returns **`contract_version: web_project_bootstrap.v1`**. |
 | `testneo_execute_generated_test_case` | Pass **`test_case_id`** OR **`project_id` + `name_query`** (optional **`name_match_mode`**: `auto` \| `exact` \| `substring`). Optional **`environment_id`** / **`environment_name`**, **`wait_for_agent_seconds`**. With **`TESTNEO_MCP_DEFAULT_EXECUTION_MODE=local`** and **`TESTNEO_MCP_PREFER_LOCAL_AGENT`**, POST body includes **`use_agent: true`** so the API queues **AgentJob** (same routing idea as batch). Response may include **`ui_navigation`** (browser deep links; see [Execution UI deep links](#execution-ui-deep-links-ui_navigation)). |
 | `testneo_run_generated_test_pipeline` | Preferred full run + report (`contract_version: execution_pipeline.v1`). Same **`test_case_id`** or **`project_id` + `name_query`** resolution and **`use_agent`** / **`wait_for_agent_seconds`** behavior as **`testneo_execute_generated_test_case`** on the initial execute step. **`pipeline.ui_navigation`** mirrors execute when an execution id is known. |
-| `testneo_run_batch_by_tags` | **`POST /api/web/v1/multi-test-runs/create`** + **`…/execute`** for tests matching tags; with **`TESTNEO_MCP_DEFAULT_EXECUTION_MODE=local`** and **`TESTNEO_MCP_PREFER_LOCAL_AGENT`**, sets **`use_agent`**. Polls **`/agents/my-agent`** for up to **`TESTNEO_MCP_WAIT_FOR_AGENT_MS`** or **`wait_for_agent_seconds`** before failing when **`TESTNEO_MCP_REQUIRE_LOCAL_AGENT_FOR_BATCH`** is on; optional **`TESTNEO_MCP_OPEN_AGENT_SETUP_ON_AGENT_FAILURE`** opens **`setup_url`** on hard failure. |
+| `testneo_run_batch_by_tags` | **`POST /api/web/v1/multi-test-runs/create`** + **`…/execute`** for tests matching tags; with **`TESTNEO_MCP_DEFAULT_EXECUTION_MODE=local`** and **`TESTNEO_MCP_PREFER_LOCAL_AGENT`**, sets **`use_agent`**. Polls **`/agents/my-agent`** for up to **`TESTNEO_MCP_WAIT_FOR_AGENT_MS`** or **`wait_for_agent_seconds`** before failing when **`TESTNEO_MCP_REQUIRE_LOCAL_AGENT_FOR_BATCH`** is on; optional **`TESTNEO_MCP_OPEN_AGENT_SETUP_ON_AGENT_FAILURE`** opens **`setup_url`** on hard failure. Returns **`ui_navigation.multi_test_runner_url`** to open the batch in the UI. |
+| `testneo_run_api_test_chain` | Same **create + execute** path as batch-by-tags, but runs tests in **chain order**: pass **`test_case_ids`** **or** **`saved_chain_id`** (exactly one). Response includes **`preserve_test_case_order: true`**, **`chain_source`**, and **`ui_navigation`** (Multi Test Runner + per-test dashboards when results exist). |
+| `testneo_save_api_test_chain` | **`POST …/projects/{id}/api-test-chains`** — persist a named ordered suite from **`testneo_suggest_api_test_chains`** or manual ids. |
+| `testneo_delete_saved_api_test_chain` | **`DELETE …/api-test-chains/{chain_id}`**. |
 | `testneo_rerun_failed` | |
 | `testneo_trigger_playwright_execution` | Raw NLP → SDK execute. |
 | `testneo_set_project_route_map` | Persists `project_settings.mcp_route_hardening`. |
@@ -157,6 +162,18 @@ Several tools return **`ui_navigation`** with **`contract_version: "testneo_mcp_
 
 **Tools that include `ui_navigation`:** `testneo_execute_generated_test_case` (when the execute response includes an execution id), `testneo_run_generated_test_pipeline` (nested under **`pipeline`**), `testneo_watch_execution`, `testneo_get_execution_status`, `testneo_get_execution_summary`, `testneo_get_execution_logs`, `testneo_get_failure_bundle`.
 
+**Multi-test / API chain runs** return **`ui_navigation`** with **`contract_version: "testneo_mcp_multi_test_run_ui.v1"`** on **`testneo_run_batch_by_tags`** and **`testneo_run_api_test_chain`** (after a successful create + execute):
+
+| Field | Meaning |
+| --- | --- |
+| **`multi_test_runner_url`** | Multi Test Runner in the browser (`…/test-runner?projectId=` + optional **`testRunId=`**). |
+| **`project_manage_url`** | Project manage page (`…/projects/{id}/manage`). |
+| **`executions_list_url`** | In-app executions list. |
+| **`multi_test_status_api_url`** / **`multi_test_results_api_url`** | API poll URLs for agents. |
+| **`test_execution_links`** | When results are already available: per-test **`execution_dashboard_url`** (same as single-test runs). |
+
+**`testneo_suggest_api_test_chains`** includes **`product_navigation`** with **`project_manage_url`** and **`multi_test_runner_url`** (no `testRunId` until after a run).
+
 **MCP env (optional, parsed in `packages/testneo-mcp-server/src/config.ts`):**
 
 | Variable | Role |
@@ -186,7 +203,7 @@ Heuristics are conservative (route hardening, optional short wait for timeout th
 
 ## Project execution preconditions (executable base URL)
 
-**Default:** before **`testneo_generate_tests_from_context`**, **`testneo_figma_to_tests_workflow`**, and any **confirmed** execution on **`testneo_execute_generated_test_case`**, **`testneo_run_generated_test_pipeline`**, **`testneo_run_playwright_spec_preview`**, **`testneo_rerun_failed`**, **`testneo_run_batch_by_tags`**, or **`testneo_trigger_playwright_execution`**, the server loads the project (and, if needed, **web environments**) and requires a resolvable **http(s)** base URL. Failures return JSON with **`error: "project_precondition_failed"`**, **`precondition_code`**, and **`remediation`** (agent-actionable).
+**Default:** before **`testneo_generate_tests_from_context`**, **`testneo_figma_to_tests_workflow`**, and any **confirmed** execution on **`testneo_execute_generated_test_case`**, **`testneo_run_generated_test_pipeline`**, **`testneo_run_playwright_spec_preview`**, **`testneo_rerun_failed`**, **`testneo_run_batch_by_tags`**, **`testneo_run_api_test_chain`**, **`testneo_save_api_test_chain`**, **`testneo_delete_saved_api_test_chain`**, or **`testneo_trigger_playwright_execution`**, the server loads the project (and, if needed, **web environments**) and requires a resolvable **http(s)** base URL. Failures return JSON with **`error: "project_precondition_failed"`**, **`precondition_code`**, and **`remediation`** (agent-actionable).
 
 **Web environments HTTP (used by MCP preconditions and policy):**
 
@@ -212,7 +229,7 @@ Current policy checks include:
 
 Config:
 - `TESTNEO_MCP_POLICY_MODE=strict` (default) or `warn`
-- Batch / multi-test routing: **`TESTNEO_MCP_DEFAULT_EXECUTION_MODE`** (`local` \| `cloud`), **`TESTNEO_MCP_DEFAULT_EXECUTION_PLATFORM`**, **`TESTNEO_MCP_PREFER_LOCAL_AGENT`**, **`TESTNEO_MCP_REQUIRE_LOCAL_AGENT_FOR_BATCH`**, **`TESTNEO_MCP_WAIT_FOR_AGENT_MS`**, **`TESTNEO_MCP_OPEN_AGENT_SETUP_ON_AGENT_FAILURE`** — used by **`testneo_run_batch_by_tags`** (**`use_agent`** only when execution mode is **`local`** and prefer-local is on; agent wait + optional browser open on failure).
+- Batch / multi-test routing: **`TESTNEO_MCP_DEFAULT_EXECUTION_MODE`** (`local` \| `cloud`), **`TESTNEO_MCP_DEFAULT_EXECUTION_PLATFORM`**, **`TESTNEO_MCP_PREFER_LOCAL_AGENT`**, **`TESTNEO_MCP_REQUIRE_LOCAL_AGENT_FOR_BATCH`**, **`TESTNEO_MCP_WAIT_FOR_AGENT_MS`**, **`TESTNEO_MCP_OPEN_AGENT_SETUP_ON_AGENT_FAILURE`** — used by **`testneo_run_batch_by_tags`** and **`testneo_run_api_test_chain`** (**`use_agent`** only when execution mode is **`local`** and prefer-local is on; agent wait + optional browser open on failure).
 
 ---
 

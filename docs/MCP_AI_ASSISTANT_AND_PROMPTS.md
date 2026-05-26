@@ -86,6 +86,24 @@ That pattern is stronger than “chat with PDF only” products: **ground truth 
 
 ---
 
+## NLP / Swagger API test chains (Multi Test Runner parity)
+
+When the user asks **which NLP/API suite to run**, **recommended ordering**, or **business-flow chains** (Swagger-derived tests, `METHOD /path` steps), prefer **tool-grounded** data instead of guessing `@tags`:
+
+| Tool | Role |
+|------|------|
+| **`testneo_suggest_api_test_chains`** | Read-only scan: **`GET …/projects/{id}/api-test-chains/suggest`** — returns **`chains`**, **`phases`**, and summaries aligned with the in-product Multi Test Runner. |
+| **`testneo_list_saved_api_test_chains`** | Lists named suites the user saved in the app. |
+| **`testneo_save_api_test_chain`** | Guarded write — persist **`test_case_ids`** + **`name`** (optional **`description`**); **`confirm=true`**. |
+| **`testneo_run_api_test_chain`** | Guarded write — **`POST …/multi-test-runs/create`** + **`…/execute`** with **`preserve_test_case_order: true`**. Pass **either** **`test_case_ids`** (ordered list copied from suggest output) **or** **`saved_chain_id`** — never both, never neither. Same **`use_agent`** / local-agent wait behavior as **`testneo_run_batch_by_tags`**. |
+| **`testneo_delete_saved_api_test_chain`** | Guarded write — remove a saved suite by id. |
+
+**Agent playbook:** (1) call **`testneo_suggest_api_test_chains`**; (2) pick the chain whose title/steps match the user goal and cite **`test_case_ids`** or **`saved_chain_id`**; (3) only after explicit approval with **`confirm=true`**, call **`testneo_run_api_test_chain`**. Use **`testneo_ai_assistant_query`** only to *explain* chain JSON in stakeholder language — do not invent suites absent from suggest/list responses.
+
+Details: [MCP tool reference — Read tools](./mcp-tool-reference.md#readanalysis-tools) and guarded execution rows.
+
+---
+
 ## Combination recipes (MCP then assistant)
 
 These are **two-step** (or **three-step**) patterns: MCP returns **facts**; **`testneo_ai_assistant_query`** (or plain chat) turns them into **stakeholder language**. A fuller **tool × audience** matrix lives in [Golden prompt packs — Question combinations](./mcp-prompt-packs.md#question-combinations-tools-and-follow-ups).
@@ -102,6 +120,7 @@ These are **two-step** (or **three-step**) patterns: MCP returns **facts**; **`t
 | **H — CEO strategic brief** | Same three tools as **G** | `testneo_ai_assistant_query`: **CEO** narrative (customer trust, scale vs stabilize, one decision)—facts from JSON only; no finance detail unless assumptions block in a follow-up. |
 | **I — Manager → CEO business report** | Same three tools as **G** | **Cursor synthesis** (recommended): paste JSON + `BUSINESS_ASSUMPTIONS` in chat. Optional `testneo_ai_assistant_query` with [safe wording](#ai-q-routing-important-for-testneo_ai_assistant_query); see [Sample — Project 1](#sample--project-1-acme-b2b-saas-tested). |
 | **J — Manager → CEO (Cursor only)** | Same three tools as **G** | No assistant call: manager pastes **BUSINESS_ASSUMPTIONS** + three JSON blobs; agent writes CEO memo (revenue exposure, customer impact, OSI). [Golden prompt packs — C14](./mcp-prompt-packs.md#c14--manager--ceo-cursor-synthesis-recommended). |
+| **K — Chain scan → narrative → run** | **`testneo_suggest_api_test_chains`** (and optionally **`testneo_list_saved_api_test_chains`**) | `testneo_ai_assistant_query`: “Explain **only** the suggested suites JSON — names, step counts, which fits `<USER_GOAL>`; list **`test_case_ids`** for the best match.” Execution stays **`testneo_run_api_test_chain`** with **`confirm=true`** when the user approves; share **`ui_navigation.multi_test_runner_url`**. **Fastest path:** [C16](./mcp-prompt-packs.md#c16--simplest-api-chain-smoke-start-here). **Full variants (Store/Pet/Customers, save+run, triage):** [C15](./mcp-prompt-packs.md#c15--suggested-api-chains--pick-suite--optional-explain--run). |
 
 **Single-message two-tool prompt (copy-paste)** — assistant second call must **not** hallucinate metrics absent from the first response:
 

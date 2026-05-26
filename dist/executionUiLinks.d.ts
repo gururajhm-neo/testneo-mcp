@@ -26,3 +26,38 @@ export declare function buildExecutionUiNavigationForClient(client: HttpClient, 
     api_execution_details_url: string;
     note: string;
 };
+export type MultiTestRunUiNavigation = {
+    contract_version: "testneo_mcp_multi_test_run_ui.v1";
+    origin: string;
+    api_origin: string;
+    project_id: number;
+    test_run_id: number | null;
+    run_id: string | null;
+    /** Multi Test Runner (batch tab) — live progress and aggregated results. */
+    multi_test_runner_url: string;
+    /** Project test-case management (where API chain scan often starts). */
+    project_manage_url: string;
+    executions_list_url: string;
+    multi_test_status_api_url: string | null;
+    multi_test_results_api_url: string | null;
+    /** Per-case execution dashboards when results are available. */
+    test_execution_links: Array<{
+        test_case_id: number;
+        test_case_name: string | null;
+        execution_id: string;
+        execution_dashboard_url: string;
+    }>;
+    note: string;
+};
+export declare function buildMultiTestRunUiNavigation(opts: {
+    apiOrigin: string;
+    appOrigin: string;
+    appPathPrefix: string;
+}, projectId: number, testRunId: number | null, runId?: string | null): MultiTestRunUiNavigation;
+export declare function buildMultiTestRunUiNavigationForClient(client: HttpClient, projectId: number, testRunId: number | null, runId?: string | null): MultiTestRunUiNavigation;
+/** Attach per-test execution dashboard URLs from a completed multi-test results payload. */
+export declare function mergeTestExecutionLinksIntoMultiTestNav(nav: MultiTestRunUiNavigation, resultsPayload: Record<string, unknown>, opts: {
+    apiOrigin: string;
+    appOrigin: string;
+    appPathPrefix: string;
+}): MultiTestRunUiNavigation;

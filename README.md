@@ -141,7 +141,9 @@ See **`docs/IDE_SETUP.md`** for more client-specific notes.
 
 Read-heavy: connection, projects, executions, logs, trends, watch, failure bundles, agent workflows, unified contexts, Swagger preview, route map, etc.
 
-Writes (guarded): execute generated test, **`testneo_run_generated_test_pipeline`** (run + wait + report), **`testneo_run_batch_by_tags`** (multi-test run by tags + optional local agent routing), rerun failed, trigger Playwright, Swagger upload/impact, NLP updates, route map persist, Figma ingest, etc.
+Writes (guarded): execute generated test, **`testneo_run_generated_test_pipeline`** (run + wait + report), **`testneo_run_batch_by_tags`** (multi-test by tags), **`testneo_run_api_test_chain`** (multi-test in saved or suggested **chain order**), **`testneo_save_api_test_chain`** / **`testneo_delete_saved_api_test_chain`**, rerun failed, trigger Playwright, Swagger upload/impact, NLP updates, route map persist, Figma ingest, etc.
+
+Reads for NLP API suites: **`testneo_suggest_api_test_chains`**, **`testneo_list_saved_api_test_chains`** (see docs).
 
 Full list: **[`docs/MCP_TOOL_REFERENCE.md`](./docs/MCP_TOOL_REFERENCE.md)** (synced from monorepo **`docs/mcp/mcp-tool-reference.md`**) or [hosted tool reference](https://testneo.ai/docs/testneo-mcp.html).
 
