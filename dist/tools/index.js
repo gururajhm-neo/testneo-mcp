@@ -693,9 +693,187 @@ async function waitForEtlJobCompletion(client, jobId, maxPolls, pollIntervalMs) 
 function registerTools(server, deps) {
     const { client, batchExecutionDefaults } = deps;
     const agentSetupUrl = `${client.getBaseUrl()}/web/agent`;
-    const workflowStore = new index_js_1.InMemoryWorkflowStore();
+    // Use API-backed persistent store; falls back to in-memory on any network error
+    const workflowStore = new index_js_1.ApiWorkflowStore(client);
+    const incidentContextAdapter = (0, index_js_1.createHttpIncidentContextAdapter)(client);
+    /**
+     * Fetches historical risk signals (failure rates, flakiness) for affected test IDs
+     * from the /api/web/v1/code-impact/risk-signals endpoint and merges them back
+     * into the AffectedTestCandidate array. Fails silently — enrichment is best-effort.
+     */
+    /**
+     * Sprint 1: Fetches per-test historical failure rates from risk-signals endpoint.
+     * Sprint 2: Also merges component_label from the signal response.
+     *
+     * Fails silently — enrichment is best-effort and must never block validation.
+     */
+    async function enrichWithRiskSignals(projectId, result) {
+        const testIds = result.affectedTests
+            .map((t) => t.test_id)
+            .filter((id) => typeof id === "number" && id > 0);
+        if (!testIds.length)
+            return result;
+        try {
+            const riskResp = await client.request("/api/web/v1/code-impact/risk-signals", {
+                query: { project_id: projectId, test_ids: testIds.join(",") },
+                timeoutMs: 8000,
+            });
+            const signals = Array.isArray(riskResp?.signals)
+                ? riskResp.signals
+                : [];
+            const signalMap = new Map(signals.map((s) => [Number(s.test_id), s]));
+            return {
+                ...result,
+                affectedTests: result.affectedTests.map((t) => {
+                    const sig = t.test_id !== undefined ? signalMap.get(t.test_id) : undefined;
+                    if (!sig)
+                        return t;
+                    return {
+                        ...t,
+                        failure_rate_7d: typeof sig.failure_rate_7d === "number" ? sig.failure_rate_7d : undefined,
+                        failure_rate_30d: typeof sig.failure_rate_30d === "number" ? sig.failure_rate_30d : undefined,
+                        flakiness_score: typeof sig.flakiness_score === "number" ? sig.flakiness_score : undefined,
+                        recent_failure_count: typeof sig.recent_failure_count === "number" ? sig.recent_failure_count : undefined,
+                        // Sprint 2: component_label from TestFunctionMapping via ComponentExtractor
+                        component_label: typeof sig.component_label === "string" ? sig.component_label : t.component_label,
+                    };
+                }),
+            };
+        }
+        catch {
+            return result;
+        }
+    }
+    /**
+     * Sprint 2: Fetches project-level component failure summary.
+     * Returns the component health array to be passed into computeRiskScore's
+     * component_history factor.  Fails silently.
+     */
+    async function fetchComponentHealth(projectId) {
+        try {
+            const resp = await client.request("/api/web/v1/code-impact/component-failure-summary", {
+                query: { project_id: projectId },
+                timeoutMs: 8000,
+            });
+            const components = Array.isArray(resp?.components) ? resp.components : [];
+            return components;
+        }
+        catch {
+            // Component health enrichment is best-effort
+            return [];
+        }
+    }
+    /**
+     * Sprint 3 (complete flow):
+     * Fetches transitive dependency blast radius AND discovers tests for all
+     * expanded files (blast → test bridge).
+     *
+     * Returns:
+     *   - DependencyBlast: the graph snapshot (nodes, depths, components)
+     *   - blastTestCandidates: tests covering expanded files, with depth-adjusted confidence
+     *
+     * Fails silently — both are best-effort enrichment.
+     */
+    async function fetchDependencyBlast(projectId, changedFiles) {
+        if (!changedFiles.length)
+            return { blast: undefined, blastTestCandidates: [], blastTestSummary: undefined };
+        try {
+            const resp = await client.request("/api/web/v1/code-impact/dependency-blast", {
+                method: "POST",
+                body: {
+                    project_id: projectId,
+                    changed_files: changedFiles.map((f) => f.path),
+                    max_depth: 2,
+                    include_tests: true,
+                },
+                timeoutMs: 12000,
+            });
+            if (!resp || typeof resp !== "object") {
+                return { blast: undefined, blastTestCandidates: [], blastTestSummary: undefined };
+            }
+            const blast = {
+                changed_files: Array.isArray(resp.changed_files) ? resp.changed_files : [],
+                expanded_files: Array.isArray(resp.expanded_files) ? resp.expanded_files : [],
+                nodes: Array.isArray(resp.nodes) ? resp.nodes : [],
+                direct_dependents: typeof resp.direct_dependents === "number" ? resp.direct_dependents : 0,
+                transitive_dependents: typeof resp.transitive_dependents === "number" ? resp.transitive_dependents : 0,
+                total_expanded: typeof resp.total_expanded === "number" ? resp.total_expanded : 0,
+                max_depth: typeof resp.max_depth === "number" ? resp.max_depth : 0,
+                affected_components: (typeof resp.blast_summary === "object" && resp.blast_summary !== null)
+                    ? resp.blast_summary.affected_components
+                    : undefined,
+                has_structure: resp.has_structure === true,
+            };
+            // Normalise blast_test_candidates from the API response
+            const rawCandidates = Array.isArray(resp.blast_test_candidates)
+                ? resp.blast_test_candidates
+                : [];
+            const blastTestCandidates = rawCandidates.map((c) => ({
+                test_id: typeof c.test_id === "number" ? c.test_id : undefined,
+                test_name: typeof c.test_name === "string" ? c.test_name : undefined,
+                function_name: typeof c.function_name === "string" ? c.function_name : undefined,
+                confidence: typeof c.confidence === "number" ? c.confidence : 0.5,
+                confidence_score: typeof c.confidence === "number" ? c.confidence : 0.5,
+                impact_level: (c.risk_level === "HIGH" ? "high" : c.risk_level === "MEDIUM" ? "medium" : "low"),
+                // reason encodes the blast chain
+                reason: `Transitive: ${c.file_path ?? ""} imports changed files (depth ${c.depth ?? "?"})`,
+                failure_rate_7d: typeof c.failure_rate_7d === "number" ? c.failure_rate_7d : undefined,
+                failure_rate_30d: typeof c.failure_rate_30d === "number" ? c.failure_rate_30d : undefined,
+                flakiness_score: typeof c.flakiness_score === "number" ? c.flakiness_score : undefined,
+                component_label: typeof c.component_label === "string" ? c.component_label : undefined,
+                // Sprint 3 blast provenance fields
+                blast_source: typeof c.blast_source === "string" ? c.blast_source : undefined,
+                blast_depth: typeof c.depth === "number" ? c.depth : undefined,
+                blast_file_path: typeof c.file_path === "string" ? c.file_path : undefined,
+            }));
+            const rawSummary = resp.blast_test_summary;
+            const blastTestSummary = (typeof rawSummary === "object" && rawSummary !== null)
+                ? rawSummary
+                : undefined;
+            return { blast, blastTestCandidates, blastTestSummary };
+        }
+        catch {
+            return { blast: undefined, blastTestCandidates: [], blastTestSummary: undefined };
+        }
+    }
+    /**
+     * Merges blast test candidates into the main affectedTests list.
+     *
+     * Rules:
+     *   - Skip blast candidates whose test_id already appears in directTests
+     *     (avoids double-counting tests found both ways)
+     *   - Blast candidates get blast_source + blast_depth set
+     *   - Sorted: direct first (higher confidence), then transitive by depth
+     */
+    function mergeBlastCandidates(directTests, blastCandidates) {
+        const directIds = new Set(directTests.map((t) => t.test_id).filter((id) => typeof id === "number"));
+        // Tag direct tests as blast_source="direct" if not already tagged
+        const taggedDirect = directTests.map((t) => ({
+            ...t,
+            blast_source: t.blast_source ?? "direct",
+            blast_depth: t.blast_depth ?? 0,
+        }));
+        // Filter blast candidates to exclude already-found tests
+        const newBlast = blastCandidates.filter((c) => c.test_id === undefined || !directIds.has(c.test_id));
+        // Merge and sort: direct first, then by depth ascending, then by confidence descending
+        return [
+            ...taggedDirect,
+            ...newBlast.sort((a, b) => {
+                const depthDiff = (a.blast_depth ?? 1) - (b.blast_depth ?? 1);
+                if (depthDiff !== 0)
+                    return depthDiff;
+                return (b.confidence ?? 0) - (a.confidence ?? 0);
+            }),
+        ];
+    }
     const impactAnalyzer = {
         analyze: async (request) => {
+            // Sprint 2+3: all enrichment fetched in parallel with impact analysis
+            // (all best-effort — never block validation on failure)
+            const changedFiles = request.git.changed_files ?? [];
+            const componentHealthPromise = fetchComponentHealth(request.project_id);
+            const dependencyBlastPromise = fetchDependencyBlast(request.project_id, changedFiles);
+            let base;
             if (request.git.diff_content?.trim()) {
                 const response = await client.request("/api/web/v1/code-impact/analyze/manual", {
                     method: "POST",
@@ -703,23 +881,33 @@ function registerTools(server, deps) {
                     body: { diff_content: request.git.diff_content },
                     timeoutMs: client.longRequestTimeoutMs,
                 });
-                return {
-                    ...normalizeImpactAnalysisPayload(response),
-                    source: "manual_diff",
-                };
+                base = { ...normalizeImpactAnalysisPayload(response), source: "manual_diff" };
             }
-            const response = await client.request("/api/web/v1/code-impact/analyze", {
-                method: "POST",
-                query: { project_id: request.project_id },
-                body: {
-                    base_ref: request.git.base_sha,
-                    head_ref: request.git.head_sha,
-                },
-                timeoutMs: client.longRequestTimeoutMs,
-            });
+            else {
+                const response = await client.request("/api/web/v1/code-impact/analyze", {
+                    method: "POST",
+                    query: { project_id: request.project_id },
+                    body: {
+                        base_ref: request.git.base_sha,
+                        head_ref: request.git.head_sha,
+                    },
+                    timeoutMs: client.longRequestTimeoutMs,
+                });
+                base = { ...normalizeImpactAnalysisPayload(response), source: "git_refs" };
+            }
+            // Enrich per-test signals (failure rates, component labels)
+            const enriched = await enrichWithRiskSignals(request.project_id, base);
+            // Resolve parallel enrichment
+            const [componentHealth, { blast: dependencyBlast, blastTestCandidates, blastTestSummary }] = await Promise.all([componentHealthPromise, dependencyBlastPromise]);
+            // Merge blast test candidates into affected tests
+            const mergedTests = mergeBlastCandidates(enriched.affectedTests, blastTestCandidates);
             return {
-                ...normalizeImpactAnalysisPayload(response),
-                source: "git_refs",
+                ...enriched,
+                affectedTests: mergedTests,
+                componentHealth,
+                dependencyBlast,
+                // Store blast summary for orchestrator to persist in metadata
+                ...(blastTestSummary ? { blastTestSummary } : {}),
             };
         },
     };
@@ -1700,11 +1888,1144 @@ function registerTools(server, deps) {
             const orchestrator = new index_js_1.PrValidationOrchestrator({
                 store: workflowStore,
                 impactAnalyzer,
+                claudeAnalyzer: new index_js_1.DataDrivenClaudeAnalyzer(),
+                incidentContextAdapter,
                 testExecutor: testExecutionAdapter,
                 enableTestExecution: deps.allowWriteTools,
             });
             const response = await orchestrator.validatePr(params);
             return result(asText(response));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_get_pr_validation_history", {
+        description: "Returns the recent validate_pr run history for a project — risk scores, merge signals, and statuses. " +
+            "Use this to answer 'have we seen failures like this before?' or 'what was the risk score last time we touched this file?'. " +
+            "Foundation for Release Memory. Read-only.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+            limit: zod_1.z.number().int().min(1).max(50).default(10),
+        }),
+    }, async ({ project_id, limit }) => {
+        try {
+            const resp = await client.request(`/api/web/v1/workflow-contexts/project/${encodeURIComponent(String(project_id))}/history`, { query: { limit } });
+            const history = Array.isArray(resp?.history) ? resp.history : [];
+            return result(asText({
+                contract_version: "pr_validation_history.v1",
+                project_id,
+                count: history.length,
+                history: history.map((h) => ({
+                    workflow_id: h.workflow_id,
+                    status: h.status,
+                    risk_score: h.risk_score,
+                    risk_level: h.risk_level,
+                    merge_signal: h.merge_signal,
+                    source: h.source,
+                    created_at: h.created_at,
+                })),
+                insight: history.length > 0
+                    ? `Last validation: ${history[0].risk_level ?? "unknown"} risk (score ${history[0].risk_score ?? "?"}/100)`
+                    : "No previous validations found for this project.",
+            }));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    // ── Gap #1: Release Readiness Intelligence ────────────────────────────────
+    registerTracedTool("testneo_get_release_readiness", {
+        description: "Compute a Release Confidence score (0–100) across all PR validations in a time window. " +
+            "Answers: 'Is this release safe to ship?' — aggregates verification coverage, average PR risk, " +
+            "component health, and Engineering Memory signals. Returns a recommendation: " +
+            "SAFE TO RELEASE / RELEASE WITH CAUTION / HOLD / BLOCKED. " +
+            "Call this before merging a batch of PRs to production. Read-only.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive().describe("Project ID to analyse."),
+            lookback_days: zod_1.z
+                .number()
+                .int()
+                .min(1)
+                .max(90)
+                .default(14)
+                .describe("Days to look back for PR validation runs (default 14)."),
+            since: zod_1.z
+                .string()
+                .optional()
+                .describe("ISO datetime — start of window (overrides lookback_days)."),
+            until: zod_1.z
+                .string()
+                .optional()
+                .describe("ISO datetime — end of window (default: now)."),
+        }),
+    }, async ({ project_id, lookback_days, since, until }) => {
+        try {
+            const query = { project_id, lookback_days };
+            if (since)
+                query.since = since;
+            if (until)
+                query.until = until;
+            const resp = await client.request("/api/web/v1/release-readiness/summary", { query });
+            const confidence = resp?.release_confidence ?? 0;
+            const rec = resp?.recommendation ?? "UNKNOWN";
+            const recDetail = resp?.recommendation_detail ?? "";
+            const summary = resp?.summary ?? {};
+            const breakdown = Array.isArray(resp?.score_breakdown) ? resp.score_breakdown : [];
+            const blockPrs = Array.isArray(resp?.block_prs) ? resp.block_prs : [];
+            const warnPrs = Array.isArray(resp?.warn_prs) ? resp.warn_prs : [];
+            const lines = [
+                `# Release Readiness: Project ${project_id}`,
+                ``,
+                `## 🏁 Release Confidence: ${confidence}/100 — ${rec}`,
+                `${recDetail}`,
+                ``,
+                `## Summary`,
+                `- PRs analysed: ${summary.total_prs ?? 0}`,
+                `- BLOCK: ${summary.block_count ?? 0}  WARN: ${summary.warn_count ?? 0}  PASS: ${summary.pass_count ?? 0}`,
+                `- Services changed: ${summary.services_changed ?? 0}`,
+                `- High-risk components: ${summary.high_risk_components ?? 0} (${summary.high_risk_worsening ?? 0} worsening)`,
+                `- Engineering Memory HIGH signals: ${summary.engineering_memory_high_signals ?? 0}`,
+                `- Verification coverage: ${summary.verification_coverage_pct ?? 100}%`,
+                ``,
+            ];
+            if (breakdown.length > 0) {
+                lines.push("## Score Breakdown");
+                for (const f of breakdown) {
+                    lines.push(`- **${f.label}** (${Math.round((f.weight ?? 0) * 100)}% weight): ${f.score}/100 — ${f.detail}`);
+                }
+                lines.push("");
+            }
+            if (blockPrs.length > 0) {
+                lines.push(`## 🚨 Blocked PRs (${blockPrs.length})`);
+                for (const pr of blockPrs.slice(0, 5)) {
+                    lines.push(`- PR #${pr.pr_number ?? "?"} — ${pr.pr_title ?? "(no title)"} — score ${pr.risk_score}/100`);
+                }
+                if (blockPrs.length > 5)
+                    lines.push(`  ... and ${blockPrs.length - 5} more`);
+                lines.push("");
+            }
+            if (warnPrs.length > 0) {
+                lines.push(`## ⚠️ Warning PRs (${warnPrs.length})`);
+                for (const pr of warnPrs.slice(0, 5)) {
+                    lines.push(`- PR #${pr.pr_number ?? "?"} — ${pr.pr_title ?? "(no title)"} — score ${pr.risk_score}/100`);
+                }
+                lines.push("");
+            }
+            lines.push(`## Next Steps`, confidence >= 85
+                ? "✅ Release is ready. No blocking issues detected."
+                : confidence >= 70
+                    ? "⚠️ Address warnings before releasing to production."
+                    : "🚨 Resolve all BLOCK-level PRs before proceeding with the release.");
+            return result(lines.join("\n"));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    // ── Gap #3: AI Change Risk Prediction (Pre-PR Preflight) ──────────────────
+    registerTracedTool("testneo_preflight_check", {
+        description: "Instant AI risk assessment for code changes BEFORE a PR is created. " +
+            "Takes a list of changed files (or a raw diff summary) and returns: " +
+            "affected components, risk tier (LOW/MEDIUM/HIGH/CRITICAL), recommended tests to run, " +
+            "Engineering Memory matches (have we seen these files fail before?), and top risk reasons. " +
+            "Designed to run in <2 seconds inside your editor flow — no test execution, analysis only. " +
+            "Call this while coding to get an early warning before you push.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive().describe("Project ID."),
+            changed_files: zod_1.z
+                .array(zod_1.z.string())
+                .min(1)
+                .max(200)
+                .describe("List of file paths being modified (relative to repo root). " +
+                "E.g. ['src/orders/order_service.py', 'src/models/order.py']"),
+            branch: zod_1.z
+                .string()
+                .optional()
+                .describe("Current branch name (optional, for context)."),
+            change_description: zod_1.z
+                .string()
+                .max(500)
+                .optional()
+                .describe("Short summary of what you are changing (optional, improves analysis)."),
+        }),
+    }, async ({ project_id, changed_files, branch, change_description }) => {
+        try {
+            // 1. Code impact analysis — which tests / components are affected?
+            const impactResp = await client.request("/api/web/v1/code-impact/analyze", {
+                method: "POST",
+                body: {
+                    project_id,
+                    changed_files,
+                    branch: branch ?? "feature/preflight",
+                    pr_title: change_description ?? `Preflight check: ${changed_files.slice(0, 3).join(", ")}`,
+                },
+            }).catch(() => null);
+            // 2. Engineering Memory — incident context for these files
+            const memoryResp = await client.request("/api/web/v1/incident-context/lookup", {
+                method: "POST",
+                body: {
+                    project_id,
+                    changed_files,
+                    pr_title: change_description ?? "preflight",
+                    error_messages: [],
+                    failed_test_names: [],
+                },
+            }).catch(() => null);
+            // 3. Parse results
+            const affectedTests = Array.isArray(impactResp?.affected_tests)
+                ? impactResp.affected_tests
+                : [];
+            const componentHealth = Array.isArray(impactResp?.component_health)
+                ? impactResp.component_health
+                : [];
+            const memMatchTier = memoryResp?.match_tier ?? "none";
+            const memMatchScore = memoryResp?.incident_match_score ?? 0;
+            const memMatches = Array.isArray(memoryResp?.matches)
+                ? memoryResp.matches
+                : [];
+            const memInsight = memoryResp?.insight ?? "";
+            const highRiskComponents = componentHealth.filter((c) => c.risk_level === "HIGH");
+            const criticalTests = affectedTests.filter((t) => (t.confidence ?? 0) >= 0.8);
+            // 4. Compute preflight risk tier
+            const hasHighMem = memMatchTier === "high";
+            const hasHighComp = highRiskComponents.length > 0;
+            const testCount = criticalTests.length;
+            let riskTier;
+            let riskScore;
+            if (hasHighMem && hasHighComp) {
+                riskTier = "CRITICAL";
+                riskScore = 90;
+            }
+            else if (hasHighMem || (hasHighComp && testCount > 3)) {
+                riskTier = "HIGH";
+                riskScore = 70;
+            }
+            else if (hasHighComp || testCount > 1 || memMatchTier === "medium") {
+                riskTier = "MEDIUM";
+                riskScore = 45;
+            }
+            else {
+                riskTier = "LOW";
+                riskScore = 20;
+            }
+            // 5. Build human-readable output
+            const lines = [
+                `# ⚡ Preflight Risk Check`,
+                `**Project ${project_id}** · ${changed_files.length} file(s) changed${branch ? ` · branch: \`${branch}\`` : ""}`,
+                ``,
+                `## Risk Assessment: ${riskTier} (${riskScore}/100)`,
+                ``,
+            ];
+            if (changed_files.length > 0) {
+                lines.push("## Changed Files");
+                for (const f of changed_files.slice(0, 10))
+                    lines.push(`- \`${f}\``);
+                if (changed_files.length > 10)
+                    lines.push(`  ... +${changed_files.length - 10} more`);
+                lines.push("");
+            }
+            if (criticalTests.length > 0) {
+                lines.push(`## 🧪 Recommended Tests (${criticalTests.length} high-confidence matches)`);
+                for (const t of criticalTests.slice(0, 8)) {
+                    lines.push(`- ${t.name ?? t.test_name ?? t.id} (confidence: ${Math.round((t.confidence ?? 0) * 100)}%)`);
+                }
+                lines.push("");
+            }
+            else if (affectedTests.length > 0) {
+                lines.push(`## 🧪 Potentially Affected Tests (${affectedTests.length})`);
+                for (const t of affectedTests.slice(0, 5)) {
+                    lines.push(`- ${t.name ?? t.test_name ?? t.id}`);
+                }
+                lines.push("");
+            }
+            if (highRiskComponents.length > 0) {
+                lines.push(`## ⚠️ High-Risk Components (${highRiskComponents.length})`);
+                for (const c of highRiskComponents) {
+                    lines.push(`- **${c.component ?? c.name}** — ${c.risk_level} risk${c.trend ? ` (${c.trend})` : ""}`);
+                }
+                lines.push("");
+            }
+            if (memMatchTier !== "none" && memMatchTier !== "low") {
+                lines.push(`## 🧠 Engineering Memory — ${memMatchTier.toUpperCase()} signal (score: ${memMatchScore}/100)`);
+                if (memInsight)
+                    lines.push(memInsight);
+                if (memMatches.length > 0) {
+                    lines.push("");
+                    for (const m of memMatches.slice(0, 3)) {
+                        lines.push(`- ${m.summary ?? m.description ?? JSON.stringify(m).slice(0, 120)}`);
+                    }
+                }
+                lines.push("");
+            }
+            lines.push("## 💡 Recommendation");
+            if (riskTier === "CRITICAL") {
+                lines.push("🚨 **CRITICAL** — Engineering Memory detected recurring failures in these files. " +
+                    "Run `testneo_validate_pr` before pushing to ensure these are addressed.");
+            }
+            else if (riskTier === "HIGH") {
+                lines.push("🔴 **HIGH RISK** — High-risk component(s) or recurring incident pattern detected. " +
+                    "Consider running the recommended tests locally before opening a PR.");
+            }
+            else if (riskTier === "MEDIUM") {
+                lines.push("🟡 **MEDIUM RISK** — Some test coverage recommended. " +
+                    "Open a PR and run `testneo_validate_pr` to get a full risk assessment.");
+            }
+            else {
+                lines.push("🟢 **LOW RISK** — No high-risk signals detected for these files. " +
+                    "Proceed with PR creation. `testneo_validate_pr` will confirm before merge.");
+            }
+            return result(lines.join("\n"));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    // ── Gap #5: AI Release Manager ────────────────────────────────────────────
+    registerTracedTool("testneo_generate_release_brief", {
+        description: "Gap #5 — AI Release Manager. Generates a complete Release Brief before deploying to production. " +
+            "Produces: (1) Go/No-Go verdict grounded in Release Confidence score, " +
+            "(2) AI-generated Release Notes summarising all PRs in the release window, " +
+            "(3) Deploy Checklist with pre/deploy/post-deploy steps and risk flags, " +
+            "(4) Rollback Plan with per-service revert steps and command hints. " +
+            "Powered by Groq llama-3.3-70b with template fallback. " +
+            "Call this when the team asks 'are we ready to ship?' or 'generate release notes'. Read-only.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive().describe("Project ID."),
+            lookback_days: zod_1.z
+                .number().int().min(1).max(90).default(14)
+                .describe("Days to look back for PR validations (default 14)."),
+            release_name: zod_1.z
+                .string().max(100).optional()
+                .describe("Release name/tag (e.g. 'v2.4.0' or 'Sprint 42'). Defaults to today's date."),
+            target_env: zod_1.z
+                .string().max(50).default("production")
+                .describe("Target deployment environment (default: 'production')."),
+            since: zod_1.z.string().optional().describe("ISO datetime — start of window."),
+            until: zod_1.z.string().optional().describe("ISO datetime — end of window."),
+        }),
+    }, async ({ project_id, lookback_days, release_name, target_env, since, until }) => {
+        try {
+            const body = { project_id, lookback_days, target_env };
+            if (release_name)
+                body.release_name = release_name;
+            if (since)
+                body.since = since;
+            if (until)
+                body.until = until;
+            const resp = await client.request("/api/web/v1/release-readiness/brief", { method: "POST", body });
+            const confidence = resp?.release_confidence ?? 0;
+            const rec = resp?.recommendation ?? "UNKNOWN";
+            const gng = resp?.go_no_go ?? {};
+            const notes = Array.isArray(resp?.release_notes) ? resp.release_notes : [];
+            const checklist = Array.isArray(resp?.deploy_checklist) ? resp.deploy_checklist : [];
+            const rollback = Array.isArray(resp?.rollback_plan) ? resp.rollback_plan : [];
+            const blockPrs = Array.isArray(resp?.block_prs) ? resp.block_prs : [];
+            const warnPrs = Array.isArray(resp?.warn_prs) ? resp.warn_prs : [];
+            const verdictEmoji = gng.verdict === "GO" ? "🟢" : gng.verdict === "GO WITH CAUTION" ? "🟡" : gng.verdict === "HOLD" ? "🟠" : "🔴";
+            const lines = [
+                `# 🚀 AI Release Brief — ${resp?.release_name ?? "Release"}`,
+                `**Target:** ${resp?.target_env ?? "production"} · **Confidence:** ${confidence}/100 · ${rec}`,
+                ``,
+                `## ${verdictEmoji} Go / No-Go: ${gng.verdict ?? "UNKNOWN"}`,
+                `${gng.summary ?? ""}`,
+            ];
+            if ((gng.blockers ?? []).length > 0) {
+                lines.push(``, `**Blockers to resolve first:**`);
+                for (const b of gng.blockers)
+                    lines.push(`- 🚨 ${b}`);
+            }
+            lines.push(``);
+            if (notes.length > 0) {
+                lines.push(`## 📋 Release Notes`);
+                for (const n of notes) {
+                    const flag = n.risk_flag ? " ⚠️" : "";
+                    lines.push(`- **[${String(n.category ?? "").toUpperCase()}]** ${n.title}${flag} — ${n.detail}`);
+                }
+                lines.push(``);
+            }
+            if (checklist.length > 0) {
+                lines.push(`## ✅ Deploy Checklist`);
+                const phases = ["pre-deploy", "deploy", "post-deploy", "monitoring"];
+                for (const phase of phases) {
+                    const items = checklist.filter(c => c.phase === phase);
+                    if (items.length === 0)
+                        continue;
+                    lines.push(``, `**${phase.toUpperCase()}**`);
+                    for (const item of items) {
+                        const flag = item.risk_flag ? " 🔴" : "";
+                        lines.push(`- [ ] ${item.step}${flag} _(${item.owner})_ — ${item.detail}`);
+                    }
+                }
+                lines.push(``);
+            }
+            if (rollback.length > 0) {
+                lines.push(`## 🔁 Rollback Plan`);
+                for (const r of rollback) {
+                    const cmd = r.command_hint ? ` \`${r.command_hint}\`` : "";
+                    lines.push(`- **[${r.priority}]** ${r.step}${cmd} _(${r.owner})_ — ${r.detail}`);
+                }
+                lines.push(``);
+            }
+            if (blockPrs.length > 0) {
+                lines.push(`## 🚨 Blocked PRs — Must Fix Before Deploy`);
+                for (const pr of blockPrs) {
+                    lines.push(`- PR #${pr.pr_number ?? "?"} — ${pr.pr_title ?? "(no title)"} — score ${pr.risk_score}/100`);
+                }
+                lines.push(``);
+            }
+            lines.push(`---`, `*Generated by TestNeo AI Release Manager · Release Confidence ${confidence}/100*`, `*View in dashboard: \`/web/pr-validation\`*`);
+            return result(lines.join("\n"));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_get_risk_signals", {
+        description: "Returns historical failure rates, flakiness scores, and risk levels for specific test case IDs. " +
+            "Use before running validate_pr to understand which tests are historically risky. " +
+            "Inputs: project_id + comma-separated test IDs. Read-only.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+            test_ids: zod_1.z.array(zod_1.z.number().int().positive()).min(1).max(50),
+        }),
+    }, async ({ project_id, test_ids }) => {
+        try {
+            const resp = await client.request("/api/web/v1/code-impact/risk-signals", { query: { project_id, test_ids: test_ids.join(",") } });
+            const signals = Array.isArray(resp?.signals) ? resp.signals : [];
+            const risky = signals.filter((s) => (s.failure_rate_7d ?? 0) > 0.2 || (s.flakiness_score ?? 0) > 0.3);
+            return result(asText({
+                contract_version: "risk_signals.v1",
+                project_id,
+                requested: test_ids.length,
+                signals,
+                summary: {
+                    high_risk_tests: risky.length,
+                    high_risk_test_ids: risky.map((s) => s.test_id),
+                    insight: risky.length > 0
+                        ? `${risky.length} test(s) have elevated failure rates or flakiness — prioritise these in PR validation.`
+                        : "All requested tests have low historical failure rates.",
+                },
+            }));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_get_incident_matches", {
+        description: "Engineering Memory lookup — returns prior PR validations, failure patterns, and resolutions " +
+            "matching changed files, components, or findings. Use for 'have we seen this before?' without " +
+            "running full validate_pr. Read-only.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+            changed_files: zod_1.z.array(zod_1.z.string()).default([]),
+            component_labels: zod_1.z.array(zod_1.z.string()).default([]),
+            affected_test_ids: zod_1.z.array(zod_1.z.number().int().positive()).default([]),
+            lookback_days: zod_1.z.number().int().min(1).max(365).default(30),
+            max_matches: zod_1.z.number().int().min(1).max(25).default(10),
+        }),
+    }, async ({ project_id, changed_files, component_labels, affected_test_ids, lookback_days, max_matches }) => {
+        try {
+            const resp = await client.request("/api/web/v1/incident-context/lookup", {
+                method: "POST",
+                body: {
+                    project_id,
+                    changed_files,
+                    component_labels,
+                    affected_test_ids,
+                    findings: [],
+                    lookback_days,
+                    max_matches,
+                },
+                timeoutMs: client.longRequestTimeoutMs,
+            });
+            return result(asText(resp));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_get_pr_validation_detail", {
+        description: "Returns the full stored context for a specific validate_pr run by workflow ID. " +
+            "Includes all findings, risk factors, and the complete audit event trail. Read-only.",
+        inputSchema: zod_1.z.object({
+            workflow_id: zod_1.z.string().min(1),
+            include_events: zod_1.z.boolean().default(false),
+        }),
+    }, async ({ workflow_id, include_events }) => {
+        try {
+            const contextResp = await client.request(`/api/web/v1/workflow-contexts/${encodeURIComponent(workflow_id)}`);
+            const context = contextResp?.context;
+            if (!context) {
+                return result(asText({ error: "not_found", workflow_id, message: "No validation run found with this workflow ID." }));
+            }
+            let events = [];
+            if (include_events) {
+                const eventsResp = await client.request(`/api/web/v1/workflow-events/${encodeURIComponent(workflow_id)}`);
+                events = Array.isArray(eventsResp?.events) ? eventsResp.events : [];
+            }
+            return result(asText({
+                contract_version: "pr_validation_detail.v1",
+                workflow_id,
+                status: context.status,
+                risk_score: context.metadata?.risk_score,
+                risk_level: context.metadata?.risk_level,
+                findings_count: Array.isArray(context.findings) ? context.findings.length : 0,
+                blocking_findings: Array.isArray(context.findings)
+                    ? context.findings.filter((f) => f.blocking).length
+                    : 0,
+                context,
+                ...(include_events ? { events, event_count: events.length } : {}),
+            }));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    // ─── IDE Agent Companion Tools ───────────────────────────────────────────
+    // These three tools are the "FAANG-level IDE experience" layer:
+    //   testneo_explain_failure      — deep-dive explanation for each finding
+    //   testneo_suggest_fix          — prioritised, actionable fix plan
+    //   testneo_pr_validation_workflow — one-shot release brief (validate + explain + fix)
+    registerTracedTool("testneo_explain_failure", {
+        description: "Returns a deep, human-readable explanation for each finding in a PR validation run. " +
+            "Synthesises historical failure rates, component risk trends, transitive blast radius, " +
+            "and changed file context into plain-English root cause analysis and concrete next steps. " +
+            "Designed for Cursor / VS Code chat: call this after testneo_validate_pr to give the " +
+            "developer a crystal-clear picture of *why* something is risky before they touch any code. " +
+            "Read-only — never starts execution.",
+        inputSchema: zod_1.z.object({
+            workflow_id: zod_1.z.string().min(1).describe("Workflow ID from a testneo_validate_pr run."),
+            finding_id: zod_1.z
+                .string()
+                .optional()
+                .describe("Explain only this finding ID (e.g. 'finding-1'). " +
+                "Omit to explain all blocking and warning findings."),
+            include_rerun_plan: zod_1.z
+                .boolean()
+                .default(true)
+                .describe("Include a concrete 'what to run next' plan at the end."),
+        }),
+    }, async ({ workflow_id, finding_id, include_rerun_plan }) => {
+        try {
+            const contextResp = await client.request(`/api/web/v1/workflow-contexts/${encodeURIComponent(workflow_id)}`);
+            const ctx = contextResp?.context;
+            if (!ctx) {
+                return result(asText({
+                    error: "not_found",
+                    workflow_id,
+                    message: "No validation run found. Run testneo_validate_pr first.",
+                }));
+            }
+            const findings = Array.isArray(ctx.findings)
+                ? ctx.findings
+                : [];
+            const riskScore = ctx.metadata?.risk_score;
+            const riskLevel = ctx.metadata?.risk_level ?? "PASS";
+            const executionMode = ctx.metadata?.execution_mode ?? "planned_only";
+            const targetFindings = finding_id
+                ? findings.filter((f) => f.id === finding_id)
+                : findings.filter((f) => f.blocking === true || f.status === "warning");
+            if (targetFindings.length === 0) {
+                return result(asText({
+                    contract_version: "pr_explain_failure.v1",
+                    workflow_id,
+                    risk_score: riskScore,
+                    risk_level: riskLevel,
+                    message: finding_id
+                        ? `Finding "${finding_id}" not found in this workflow.`
+                        : "No blocking or warning findings in this validation run — clean pass.",
+                    explanations: [],
+                }));
+            }
+            const signalEmoji = {
+                BLOCK: "🔴", WARN: "🟡", PASS: "🟢",
+            };
+            const headerSignal = signalEmoji[String(riskLevel)] ?? "⬜";
+            const lines = [
+                `## ${headerSignal} TestNeo — Failure Explanation`,
+                `**Workflow:** \`${workflow_id}\` · **Risk:** ${riskScore ?? "?"}/100 ${riskLevel} · **Mode:** ${executionMode}`,
+                "",
+            ];
+            for (let idx = 0; idx < targetFindings.length; idx++) {
+                const f = targetFindings[idx];
+                const fid = String(f.id ?? `finding-${idx + 1}`);
+                const isBlocking = f.blocking === true;
+                const status = String(f.status ?? "warning");
+                const severity = String(f.severity ?? "medium");
+                const confidence = typeof f.confidence === "number" ? Math.round(f.confidence * 100) : "?";
+                const flow = String(f.flow ?? "unknown");
+                const title = String(f.title ?? flow);
+                const issue = String(f.issue ?? "");
+                const rootCauseHint = String(f.rootCauseHint ?? "");
+                const changedFileHints = Array.isArray(f.changedFileHints) ? f.changedFileHints : [];
+                const relatedTestIds = Array.isArray(f.relatedTestIds) ? f.relatedTestIds : [];
+                const suggestedFixes = Array.isArray(f.suggestedFixes) ? f.suggestedFixes : [];
+                const statusIcon = isBlocking ? "🚫 BLOCKING" : status === "passed" ? "✅ PASSED" : "⚠️ WARNING";
+                lines.push(`### Finding ${idx + 1}: ${statusIcon} — ${title}`);
+                lines.push(`**Flow:** \`${flow}\` · **Severity:** ${severity} · **Confidence:** ${confidence}%`);
+                lines.push("");
+                // Issue description
+                if (issue) {
+                    lines.push("**What this check found:**");
+                    lines.push(issue);
+                    lines.push("");
+                }
+                // Root cause
+                const rootCause = rootCauseHint || issue.split(".")[0] || "See changed files below.";
+                lines.push("**Root cause:**");
+                lines.push(rootCause);
+                lines.push("");
+                // Changed files context
+                if (changedFileHints.length > 0) {
+                    lines.push("**Changed files involved:**");
+                    for (const fp of changedFileHints.slice(0, 6)) {
+                        lines.push(`- \`${fp}\``);
+                    }
+                    lines.push("");
+                }
+                // Historical signals from ai analysis if present
+                const aiAnalysis = ctx.ai;
+                const rootCauseEntry = (Array.isArray(aiAnalysis?.rootCauses) ? aiAnalysis.rootCauses : [])
+                    .find((rc) => rc.findingId === fid);
+                if (rootCauseEntry) {
+                    if (rootCauseEntry.probableCause && String(rootCauseEntry.probableCause) !== rootCause) {
+                        lines.push("**Historical + component signal:**");
+                        lines.push(String(rootCauseEntry.probableCause));
+                        lines.push("");
+                    }
+                    if (rootCauseEntry.rationale) {
+                        lines.push("**Rationale:**");
+                        lines.push(String(rootCauseEntry.rationale));
+                        lines.push("");
+                    }
+                }
+                // Related test IDs
+                if (relatedTestIds.length > 0) {
+                    lines.push(`**Related test IDs:** ${relatedTestIds.slice(0, 8).join(", ")}`);
+                    lines.push("");
+                }
+                // What to do
+                if (suggestedFixes.length > 0) {
+                    lines.push("**What to do:**");
+                    suggestedFixes.slice(0, 4).forEach((fix, i) => {
+                        lines.push(`${i + 1}. ${fix}`);
+                    });
+                    lines.push("");
+                }
+                if (idx < targetFindings.length - 1)
+                    lines.push("---");
+                lines.push("");
+            }
+            // Rerun plan
+            if (include_rerun_plan) {
+                const allTestIds = targetFindings.flatMap((f) => Array.isArray(f.relatedTestIds)
+                    ? f.relatedTestIds
+                    : []);
+                const uniqueTestIds = [...new Set(allTestIds)].slice(0, 20);
+                lines.push("## 🔁 Next Steps");
+                lines.push("1. Review the changed files listed above and address root causes.");
+                if (uniqueTestIds.length > 0) {
+                    lines.push(`2. Run impacted tests by ID to verify fixes: \`[${uniqueTestIds.join(", ")}]\``);
+                    lines.push("   → Use \`testneo_execute_generated_test_case\` or \`testneo_run_batch_by_tags\`.");
+                }
+                lines.push(`3. Re-validate the PR: call \`testneo_validate_pr\` again with the same ` +
+                    `repository and PR number after fixes are pushed.`);
+                lines.push("4. View the full board: call `testneo_get_pr_validation_detail` with " +
+                    `workflow_id \`${workflow_id}\`.`);
+            }
+            return result(lines.join("\n"));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_suggest_fix", {
+        description: "Returns a prioritised, actionable fix plan from a PR validation run. " +
+            "Separates findings into NOW (blocking — must fix before merge) and NEXT (warning — safe to defer). " +
+            "Each fix includes: which files to change, what to look for, how to verify the fix, and which " +
+            "tests to rerun. Ends with a concrete rerun strategy so the developer knows exactly what to " +
+            "execute to confirm the PR is safe. Designed as a follow-up to testneo_validate_pr or " +
+            "testneo_explain_failure. Read-only.",
+        inputSchema: zod_1.z.object({
+            workflow_id: zod_1.z.string().min(1).describe("Workflow ID from a testneo_validate_pr run."),
+            priority_filter: zod_1.z
+                .enum(["now", "next", "all"])
+                .default("all")
+                .describe("'now' = blocking fixes only, 'next' = warning fixes only, 'all' = both. Default: all."),
+        }),
+    }, async ({ workflow_id, priority_filter }) => {
+        try {
+            const contextResp = await client.request(`/api/web/v1/workflow-contexts/${encodeURIComponent(workflow_id)}`);
+            const ctx = contextResp?.context;
+            if (!ctx) {
+                return result(asText({
+                    error: "not_found",
+                    workflow_id,
+                    message: "No validation run found. Run testneo_validate_pr first.",
+                }));
+            }
+            const findings = Array.isArray(ctx.findings)
+                ? ctx.findings
+                : [];
+            const riskScore = ctx.metadata?.risk_score;
+            const riskLevel = ctx.metadata?.risk_level ?? "PASS";
+            const aiAnalysis = ctx.ai;
+            const aiFixSuggestions = Array.isArray(aiAnalysis?.suggestedFixes)
+                ? aiAnalysis.suggestedFixes
+                : [];
+            const blockingFindings = findings.filter((f) => f.blocking === true);
+            const warningFindings = findings.filter((f) => f.blocking !== true && f.status === "warning");
+            const mergeRec = String(aiAnalysis?.mergeRecommendation ?? "hold");
+            const recLabel = {
+                merge: "✅ Safe to merge",
+                merge_with_followup: "⚠️ Merge with follow-up",
+                hold: "🟡 Hold — run validation before merging",
+                request_changes: "🚫 Request changes — blocking issues must be resolved",
+            };
+            const lines = [
+                `## 🔧 TestNeo — Fix Suggestions`,
+                `**Workflow:** \`${workflow_id}\` · **Risk:** ${riskScore ?? "?"}/100 ${riskLevel}`,
+                `**Merge recommendation:** ${recLabel[mergeRec] ?? mergeRec}`,
+                `**Findings:** ${blockingFindings.length} blocking (NOW) · ${warningFindings.length} warnings (NEXT)`,
+                "",
+            ];
+            // ── NOW: Blocking fixes ──────────────────────────────────────────────
+            if ((priority_filter === "now" || priority_filter === "all") &&
+                blockingFindings.length > 0) {
+                lines.push("---");
+                lines.push("### 🚫 NOW — Fix before merging (blocking)");
+                lines.push("");
+                blockingFindings.forEach((f, idx) => {
+                    const fid = String(f.id ?? `finding-${idx + 1}`);
+                    const flow = String(f.flow ?? "unknown");
+                    const changedFileHints = Array.isArray(f.changedFileHints)
+                        ? f.changedFileHints
+                        : [];
+                    const relatedTestIds = Array.isArray(f.relatedTestIds)
+                        ? f.relatedTestIds
+                        : [];
+                    const suggestedFixes = Array.isArray(f.suggestedFixes)
+                        ? f.suggestedFixes
+                        : [];
+                    // Look up the AI-generated fix for this finding
+                    const aiFix = aiFixSuggestions.find((af) => af.findingId === fid);
+                    lines.push(`**${idx + 1}. Fix \`${flow}\`** — finding \`${fid}\``);
+                    if (aiFix?.fix) {
+                        lines.push(`→ ${String(aiFix.fix)}`);
+                    }
+                    else if (suggestedFixes.length > 0) {
+                        lines.push(`→ ${suggestedFixes[0]}`);
+                    }
+                    if (changedFileHints.length > 0) {
+                        lines.push(`   **Files to review:** ${changedFileHints.slice(0, 4).map((fp) => `\`${fp}\``).join(", ")}`);
+                    }
+                    if (relatedTestIds.length > 0) {
+                        lines.push(`   **Verify with tests:** ${relatedTestIds.slice(0, 6).join(", ")}`);
+                    }
+                    // Additional fix hints from the finding
+                    if (suggestedFixes.length > 1) {
+                        for (const fix of suggestedFixes.slice(1, 3)) {
+                            lines.push(`   • ${fix}`);
+                        }
+                    }
+                    lines.push("");
+                });
+            }
+            // ── NEXT: Warning fixes ──────────────────────────────────────────────
+            if ((priority_filter === "next" || priority_filter === "all") &&
+                warningFindings.length > 0) {
+                lines.push("---");
+                lines.push("### ⚠️ NEXT — Review after merging (warnings)");
+                lines.push("");
+                warningFindings.slice(0, 6).forEach((f, idx) => {
+                    const fid = String(f.id ?? `finding-${idx + 1}`);
+                    const flow = String(f.flow ?? "unknown");
+                    const relatedTestIds = Array.isArray(f.relatedTestIds)
+                        ? f.relatedTestIds
+                        : [];
+                    const aiFix = aiFixSuggestions.find((af) => af.findingId === fid);
+                    const fallbackFix = Array.isArray(f.suggestedFixes) ? f.suggestedFixes[0] : undefined;
+                    lines.push(`**${idx + 1}. Review \`${flow}\`** — finding \`${fid}\``);
+                    if (aiFix?.fix) {
+                        lines.push(`→ ${String(aiFix.fix)}`);
+                    }
+                    else if (fallbackFix) {
+                        lines.push(`→ ${fallbackFix}`);
+                    }
+                    if (relatedTestIds.length > 0) {
+                        lines.push(`   **Monitor tests:** ${relatedTestIds.slice(0, 4).join(", ")}`);
+                    }
+                    lines.push("");
+                });
+            }
+            if (blockingFindings.length === 0 && warningFindings.length === 0) {
+                lines.push("✅ No fixes required — this validation passed with no blocking or warning findings.");
+                lines.push("");
+            }
+            // ── Rerun strategy ───────────────────────────────────────────────────
+            lines.push("---");
+            lines.push("### 🔁 Rerun Strategy");
+            lines.push("");
+            const allBlockingTestIds = [
+                ...new Set(blockingFindings.flatMap((f) => Array.isArray(f.relatedTestIds) ? f.relatedTestIds : [])),
+            ].slice(0, 20);
+            if (allBlockingTestIds.length > 0) {
+                lines.push(`**After fixing blocking issues:** rerun test IDs \`[${allBlockingTestIds.join(", ")}]\``);
+                lines.push("  → `testneo_run_batch_by_tags` with tags matching these tests, or");
+                lines.push("  → `testneo_execute_generated_test_case` for individual tests.");
+                lines.push("");
+            }
+            lines.push("**To re-validate the full PR** after fixes are pushed, call:");
+            lines.push("```\ntestneo_validate_pr with the same repository, pr_number, and updated head_sha\n```");
+            lines.push("");
+            const repoOwner = ctx.repository?.owner;
+            const repoName = ctx.repository?.name;
+            const prNumber = ctx.repository?.prNumber;
+            if (repoOwner && repoName && prNumber) {
+                lines.push(`**Repository:** \`${repoOwner}/${repoName}\` · **PR:** #${prNumber}`);
+            }
+            lines.push("**View full board:** `testneo_get_pr_validation_detail` with " +
+                `workflow_id \`${workflow_id}\``);
+            return result(lines.join("\n"));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_pr_validation_workflow", {
+        description: "One-shot FAANG-level PR validation workflow for Cursor / VS Code. " +
+            "Runs the full TestNeo validation pipeline — impact analysis, risk scoring, test execution " +
+            "(when writes are allowed), DataDriven analysis — then inline-generates human-quality " +
+            "failure explanations and an actionable fix plan, all in a single call. " +
+            "Returns a structured 'Release Brief' the developer can act on immediately in the IDE: " +
+            "risk score, impacted flows, per-finding root cause, prioritised fixes, and a rerun plan. " +
+            "Use this as the primary entry point for any 'validate my PR / check my branch' workflow. " +
+            "write: requires confirm=true + TESTNEO_MCP_ALLOW_WRITE=true to execute tests; " +
+            "planning + risk scoring always runs regardless.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+            repository: zod_1.z.object({
+                owner: zod_1.z.string().min(1),
+                name: zod_1.z.string().min(1),
+            }),
+            pull_request: zod_1.z.object({
+                number: zod_1.z.number().int().positive(),
+                url: zod_1.z.string().url().optional(),
+            }),
+            git: zod_1.z.object({
+                base_sha: zod_1.z.string().min(7),
+                head_sha: zod_1.z.string().min(7),
+                diff_content: zod_1.z.string().optional(),
+                changed_files: zod_1.z
+                    .array(zod_1.z.object({
+                    path: zod_1.z.string().min(1),
+                    status: zod_1.z
+                        .enum(["added", "modified", "deleted", "renamed"])
+                        .default("modified"),
+                    additions: zod_1.z.number().int().optional(),
+                    deletions: zod_1.z.number().int().optional(),
+                    language: zod_1.z.string().optional(),
+                }))
+                    .optional(),
+            }),
+            execution: zod_1.z
+                .object({
+                run_impacted_tests: zod_1.z.boolean().default(true),
+            })
+                .default({}),
+            confirm: zod_1.z
+                .boolean()
+                .default(false)
+                .describe("Set true + TESTNEO_MCP_ALLOW_WRITE=true to execute impacted tests."),
+            idempotency_key: zod_1.z.string().min(8).max(128).optional(),
+        }),
+    }, async (params) => {
+        try {
+            // ── Step 1: Run full orchestration with DataDrivenClaudeAnalyzer ────
+            const orchestrator = new index_js_1.PrValidationOrchestrator({
+                store: workflowStore,
+                impactAnalyzer,
+                claudeAnalyzer: new index_js_1.DataDrivenClaudeAnalyzer(),
+                incidentContextAdapter,
+                testExecutor: testExecutionAdapter,
+                enableTestExecution: deps.allowWriteTools,
+            });
+            const validation = await orchestrator.validatePr({
+                ...params,
+                execution: {
+                    run_impacted_tests: params.execution.run_impacted_tests,
+                    run_visual_regression: false,
+                    run_lighthouse: false,
+                    capture_replay: false,
+                    max_parallelism: 4,
+                },
+                output: { include_comment_draft: true, publish_comment: false },
+            });
+            const { workflow_id, ai_ready_summary, impact_summary, findings, claude_analysis, comment_draft, metadata, } = validation;
+            const riskScore = ai_ready_summary.risk_score;
+            const riskLevel = ai_ready_summary.risk_level;
+            const mergeSignal = ai_ready_summary.merge_signal;
+            const blockingCount = ai_ready_summary.blocking_count;
+            const warningCount = ai_ready_summary.warning_count;
+            const passedCount = ai_ready_summary.passed_count;
+            const incidentContext = ai_ready_summary.incident_context;
+            const SIGNAL_EMOJI = {
+                block: "🔴", review: "🟡", clean: "🟢",
+            };
+            const headerEmoji = SIGNAL_EMOJI[mergeSignal] ?? "⬜";
+            const recLabel = {
+                merge: "Safe to merge",
+                merge_with_followup: "Merge with follow-up",
+                hold: "Hold — run validation stages before merging",
+                request_changes: "Request changes — resolve blocking issues first",
+            };
+            const rec = claude_analysis?.mergeRecommendation ?? "hold";
+            const prRef = `${params.repository.owner}/${params.repository.name} #${params.pull_request.number}`;
+            // ── Build Release Brief ──────────────────────────────────────────────
+            const lines = [];
+            // Header
+            lines.push(`# ${headerEmoji} TestNeo Release Brief — ${riskLevel} (${riskScore}/100)`);
+            lines.push(`**${prRef}** · workflow \`${workflow_id}\``);
+            lines.push("");
+            // AI Summary
+            if (claude_analysis?.summary) {
+                lines.push(claude_analysis.summary);
+                lines.push("");
+            }
+            // ── Impact Overview ──────────────────────────────────────────────────
+            lines.push("## 📊 Impact Overview");
+            lines.push(`| Metric | Value |`);
+            lines.push(`|--------|-------|`);
+            lines.push(`| Changed files | ${impact_summary.changed_files} |`);
+            lines.push(`| Impacted flows | ${impact_summary.impacted_flows} |`);
+            lines.push(`| Impacted tests | ${impact_summary.impacted_tests} |`);
+            lines.push(`| Blocking findings | ${blockingCount} |`);
+            lines.push(`| Warning findings | ${warningCount} |`);
+            lines.push(`| Passed findings | ${passedCount} |`);
+            lines.push(`| Execution mode | ${metadata.execution_mode} |`);
+            lines.push(`| Risk score | **${riskScore}/100** |`);
+            lines.push(`| Merge signal | **${headerEmoji} ${mergeSignal.toUpperCase()}** |`);
+            lines.push("");
+            // ── Risk Factor Breakdown ────────────────────────────────────────────
+            if (ai_ready_summary.risk_factors.length > 0) {
+                lines.push("## 📈 Risk Factor Breakdown");
+                for (const factor of ai_ready_summary.risk_factors) {
+                    const bar = "█".repeat(Math.round(factor.score / 10)) +
+                        "░".repeat(10 - Math.round(factor.score / 10));
+                    lines.push(`- **${factor.factor.replace(/_/g, " ")}** \`${bar}\` ${factor.score}/100 — ${factor.explanation}`);
+                }
+                lines.push("");
+            }
+            // ── Component Health ─────────────────────────────────────────────────
+            const componentHealth = ai_ready_summary.component_health;
+            if (componentHealth && componentHealth.length > 0) {
+                const highRisk = componentHealth.filter((c) => (c.failure_rate_7d ?? 0) >= 0.2 || c.risk_level === "HIGH");
+                if (highRisk.length > 0) {
+                    lines.push("## 🏥 Component Risk Snapshot");
+                    lines.push("| Component | 7d Failure Rate | Trend | Risk |");
+                    lines.push("|-----------|----------------|-------|------|");
+                    const TREND_ARROW = {
+                        worsening: "↑ worse", improving: "↓ better",
+                        stable: "→ stable", insufficient_data: "—",
+                    };
+                    const RISK_ICON = {
+                        HIGH: "🔴", MEDIUM: "🟡", LOW: "🟢", UNKNOWN: "⬜",
+                    };
+                    for (const c of highRisk.slice(0, 6)) {
+                        const rate = c.failure_rate_7d != null
+                            ? `${Math.round(c.failure_rate_7d * 100)}%`
+                            : "—";
+                        const trend = TREND_ARROW[c.trend ?? ""] ?? "—";
+                        const riskIcon = RISK_ICON[c.risk_level ?? ""] ?? "⬜";
+                        lines.push(`| ${c.component} | ${rate} | ${trend} | ${riskIcon} ${c.risk_level ?? "?"} |`);
+                    }
+                    lines.push("");
+                }
+            }
+            // ── Historical Incident Matches (Engineering Memory) ─────────────────
+            if (incidentContext) {
+                const TIER_EMOJI = {
+                    high: "🔴", medium: "🟡", low: "🟢", none: "⬜",
+                };
+                const tierEmoji = TIER_EMOJI[incidentContext.match_tier] ?? "⬜";
+                lines.push(`## 🔁 Historical Incident Matches — ${tierEmoji} ${incidentContext.match_count} found ` +
+                    `(score ${incidentContext.incident_match_score}/100)`);
+                lines.push("");
+                if (incidentContext.insight) {
+                    lines.push(incidentContext.insight);
+                    lines.push("");
+                }
+                if (incidentContext.top_resolution?.action) {
+                    const tr = incidentContext.top_resolution;
+                    const rateNote = tr.success_rate != null
+                        ? ` · ${Math.round(tr.success_rate * 100)}% success`
+                        : "";
+                    const timeNote = tr.avg_resolve_minutes != null ? ` · ~${tr.avg_resolve_minutes} min avg` : "";
+                    lines.push(`**Top prior fix:** ${tr.action}${rateNote}${timeNote} (${tr.cases_count} case(s))`);
+                    lines.push("");
+                }
+                for (let i = 0; i < Math.min(incidentContext.matches.length, 5); i++) {
+                    const m = incidentContext.matches[i];
+                    const typeLabel = m.match_type.replace(/_/g, " ");
+                    lines.push(`${i + 1}. **${m.title}** — ${typeLabel} · match ${m.match_score}/100 (${m.match_tier})`);
+                    lines.push(`   ${m.description}`);
+                    if (m.resolution_action) {
+                        lines.push(`   ↳ Fix: ${m.resolution_action}`);
+                    }
+                    if (m.workflow_id) {
+                        lines.push(`   ↳ Prior workflow: \`${m.workflow_id}\``);
+                    }
+                    lines.push("");
+                }
+                if (incidentContext.match_count === 0) {
+                    lines.push("_No prior incidents for this change set — TestNeo will remember this validation for next time._");
+                    lines.push("");
+                }
+            }
+            // ── Findings: Blocking ───────────────────────────────────────────────
+            const blockingFindings = findings.filter((f) => f.blocking);
+            if (blockingFindings.length > 0) {
+                lines.push("## 🚫 Blocking Findings — Must Resolve Before Merge");
+                lines.push("");
+                for (let i = 0; i < blockingFindings.length; i++) {
+                    const f = blockingFindings[i];
+                    const rootCauseEntry = (claude_analysis?.rootCauses ?? []).find((rc) => rc.findingId === f.id);
+                    lines.push(`### ${i + 1}. ${f.title}`);
+                    lines.push(`**Flow:** \`${f.flow}\` · **Severity:** ${f.severity} · **Confidence:** ${Math.round(f.confidence * 100)}%`);
+                    lines.push("");
+                    if (rootCauseEntry?.probableCause) {
+                        lines.push("**Root cause:**");
+                        lines.push(rootCauseEntry.probableCause);
+                        lines.push("");
+                    }
+                    else if (f.rootCauseHint) {
+                        lines.push("**Root cause:**");
+                        lines.push(f.rootCauseHint);
+                        lines.push("");
+                    }
+                    lines.push(f.issue);
+                    lines.push("");
+                    if (f.changedFileHints.length > 0) {
+                        lines.push(`**Files:** ${f.changedFileHints.slice(0, 4).map((fp) => `\`${fp}\``).join(", ")}`);
+                    }
+                    if (f.relatedTestIds.length > 0) {
+                        lines.push(`**Test IDs:** ${f.relatedTestIds.slice(0, 6).join(", ")}`);
+                    }
+                    lines.push("");
+                    // Fixes from AI analysis first, else from finding
+                    const aiFix = (claude_analysis?.suggestedFixes ?? []).find((sf) => sf.findingId === f.id);
+                    if (aiFix?.fix) {
+                        lines.push(`**Fix:** ${aiFix.fix}`);
+                    }
+                    else if (f.suggestedFixes.length > 0) {
+                        lines.push(`**Fix:** ${f.suggestedFixes[0]}`);
+                    }
+                    lines.push("");
+                }
+            }
+            // ── Findings: Warnings ───────────────────────────────────────────────
+            const warningFindings = findings.filter((f) => !f.blocking && f.status === "warning");
+            if (warningFindings.length > 0) {
+                lines.push("## ⚠️ Warning Findings — Review Before or After Merge");
+                lines.push("");
+                for (let i = 0; i < Math.min(warningFindings.length, 6); i++) {
+                    const f = warningFindings[i];
+                    const aiFix = (claude_analysis?.suggestedFixes ?? []).find((sf) => sf.findingId === f.id);
+                    lines.push(`**${i + 1}. \`${f.flow}\`** — ${f.title} ` +
+                        `(severity: ${f.severity} · confidence: ${Math.round(f.confidence * 100)}%)`);
+                    if (aiFix?.fix ?? f.suggestedFixes[0]) {
+                        lines.push(`  → ${aiFix?.fix ?? f.suggestedFixes[0]}`);
+                    }
+                    if (f.relatedTestIds.length > 0) {
+                        lines.push(`  → Monitor test IDs: ${f.relatedTestIds.slice(0, 4).join(", ")}`);
+                    }
+                    lines.push("");
+                }
+                if (warningFindings.length > 6) {
+                    lines.push(`_…and ${warningFindings.length - 6} more warnings. Call \`testneo_explain_failure\` ` +
+                        `with workflow_id \`${workflow_id}\` for full details._`);
+                    lines.push("");
+                }
+            }
+            // ── Recommendation ───────────────────────────────────────────────────
+            lines.push("---");
+            lines.push("## 🎯 Recommendation");
+            lines.push(`**${headerEmoji} ${recLabel[rec] ?? rec}**`);
+            lines.push("");
+            if (claude_analysis?.suggestedFixes && claude_analysis.suggestedFixes.length > 0) {
+                const nowFixes = claude_analysis.suggestedFixes.filter((sf) => sf.priority === "now");
+                const nextFixes = claude_analysis.suggestedFixes.filter((sf) => sf.priority === "next");
+                if (nowFixes.length > 0) {
+                    lines.push("**Fix now (blocking):**");
+                    for (const sf of nowFixes.slice(0, 4)) {
+                        lines.push(`- ${sf.fix}`);
+                    }
+                    lines.push("");
+                }
+                if (nextFixes.length > 0) {
+                    lines.push("**Fix next (warnings):**");
+                    for (const sf of nextFixes.slice(0, 3)) {
+                        lines.push(`- ${sf.fix}`);
+                    }
+                    lines.push("");
+                }
+            }
+            // ── Comment Draft ────────────────────────────────────────────────────
+            if (comment_draft) {
+                lines.push("<details>");
+                lines.push("<summary>📋 PR Comment Draft (copy to GitHub)</summary>");
+                lines.push("");
+                lines.push(comment_draft);
+                lines.push("</details>");
+                lines.push("");
+            }
+            // ── Next Tools ───────────────────────────────────────────────────────
+            lines.push("---");
+            lines.push("## ⚡ Next Actions");
+            lines.push("");
+            if (blockingCount > 0) {
+                lines.push(`- Deep-dive on failures: \`testneo_explain_failure\` with workflow_id \`${workflow_id}\``);
+                lines.push(`- Full fix plan: \`testneo_suggest_fix\` with workflow_id \`${workflow_id}\``);
+            }
+            lines.push(`- Full validation board: \`testneo_get_pr_validation_detail\` with workflow_id \`${workflow_id}\``);
+            lines.push(`- History for this project: \`testneo_get_pr_validation_history\` with project_id \`${params.project_id}\``);
+            if (blockingCount === 0 && warningCount === 0) {
+                lines.push("- ✅ All clear — this PR is ready to merge.");
+            }
+            lines.push("");
+            lines.push(`_Powered by [TestNeo](https://testneo.ai) · workflow \`${workflow_id}\`_`);
+            return result(lines.join("\n"));
         }
         catch (e) {
             const fmt = formatApiFailure(e);

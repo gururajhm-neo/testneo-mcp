@@ -9,6 +9,11 @@ type MockRequestCall = {
 async function run(): Promise<void> {
   const calls: MockRequestCall[] = [];
 
+  // In-memory simulation of the workflow context store for smoke testing
+  const mockContextStore = new Map<string, unknown>();         // id → context
+  const mockIdempotencyStore = new Map<string, string>();      // key → id
+  const mockEventStore = new Map<string, unknown[]>();         // workflowId → events[]
+
   const harness = createValidatePrToolHarness({
     allowWriteTools: true,
     client: {
@@ -128,6 +133,87 @@ async function run(): Promise<void> {
           } as T;
         }
 
+        // Risk signals — historical failure rates for affected tests
+        if (path === "/api/web/v1/code-impact/risk-signals") {
+          return {
+            signals: [
+              {
+                test_id: 201,
+                failure_rate_7d: 0.08,
+                failure_rate_30d: 0.05,
+                flakiness_score: 0.06,
+                recent_failure_count: 1,
+                risk_level: "low",
+              },
+              {
+                test_id: 305,
+                failure_rate_7d: 0.42,
+                failure_rate_30d: 0.35,
+                flakiness_score: 0.28,
+                recent_failure_count: 5,
+                risk_level: "high",
+              },
+            ],
+          } as T;
+        }
+
+        // Workflow context persistence — full in-memory mock
+        const opts = options as Record<string, unknown>;
+        const method = (opts?.method as string) || "GET";
+
+        if (path === "/api/web/v1/workflow-contexts" && method === "POST") {
+          const body = opts?.body as Record<string, unknown>;
+          const ctx = body?.context as Record<string, unknown>;
+          if (ctx?.id) {
+            mockContextStore.set(ctx.id as string, ctx);
+            mockIdempotencyStore.set(ctx.idempotencyKey as string, ctx.id as string);
+            mockEventStore.set(ctx.id as string, []);
+          }
+          return { status: "created" } as T;
+        }
+
+        if (path === "/api/web/v1/workflow-contexts" && method === "GET") {
+          const query = opts?.query as Record<string, unknown>;
+          const key = query?.idempotency_key as string;
+          const wfId = key ? mockIdempotencyStore.get(key) : undefined;
+          const ctx = wfId ? mockContextStore.get(wfId) : undefined;
+          return { context: ctx ?? null } as T;
+        }
+
+        if (path.match(/\/api\/web\/v1\/workflow-contexts\/[^/]+$/) && method === "PUT") {
+          const body = opts?.body as Record<string, unknown>;
+          const ctx = body?.context as Record<string, unknown>;
+          const wfId = path.split("/").pop()!;
+          if (ctx) {
+            mockContextStore.set(wfId, ctx);
+            mockIdempotencyStore.set(ctx.idempotencyKey as string, wfId);
+          }
+          return { status: "updated" } as T;
+        }
+
+        if (path.match(/\/api\/web\/v1\/workflow-contexts\/[^/]+$/) && method === "GET") {
+          const wfId = path.split("/").pop()!;
+          const ctx = mockContextStore.get(wfId);
+          return { context: ctx ?? null } as T;
+        }
+
+        if (path === "/api/web/v1/workflow-events" && method === "POST") {
+          const body = opts?.body as Record<string, unknown>;
+          const event = body?.event as Record<string, unknown>;
+          const wfId = event?.workflowId as string;
+          if (wfId) {
+            const existing = mockEventStore.get(wfId) ?? [];
+            existing.push(event);
+            mockEventStore.set(wfId, existing);
+          }
+          return { status: "appended" } as T;
+        }
+
+        if (path.match(/\/api\/web\/v1\/workflow-events\/.+/) && method === "GET") {
+          const wfId = path.split("/").pop()!;
+          return { events: mockEventStore.get(wfId) ?? [] } as T;
+        }
+
         throw new Error(`Unexpected mock backend path: ${path}`);
       },
     },
@@ -213,6 +299,8 @@ async function run(): Promise<void> {
           executionMode: first.metadata.execution_mode,
           plannedStages: Object.values(first.execution_summary).filter(Boolean).length,
         },
+        // Full customer-facing response for inspection
+        customer_response: first,
       },
       null,
       2,

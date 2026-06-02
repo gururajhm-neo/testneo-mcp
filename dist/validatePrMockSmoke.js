@@ -3,6 +3,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const validatePrSmokeHarness_js_1 = require("./validatePrSmokeHarness.js");
 async function run() {
     const calls = [];
+    // In-memory simulation of the workflow context store for smoke testing
+    const mockContextStore = new Map(); // id → context
+    const mockIdempotencyStore = new Map(); // key → id
+    const mockEventStore = new Map(); // workflowId → events[]
     const harness = (0, validatePrSmokeHarness_js_1.createValidatePrToolHarness)({
         allowWriteTools: true,
         client: {
@@ -113,6 +117,79 @@ async function run() {
                         },
                     };
                 }
+                // Risk signals — historical failure rates for affected tests
+                if (path === "/api/web/v1/code-impact/risk-signals") {
+                    return {
+                        signals: [
+                            {
+                                test_id: 201,
+                                failure_rate_7d: 0.08,
+                                failure_rate_30d: 0.05,
+                                flakiness_score: 0.06,
+                                recent_failure_count: 1,
+                                risk_level: "low",
+                            },
+                            {
+                                test_id: 305,
+                                failure_rate_7d: 0.42,
+                                failure_rate_30d: 0.35,
+                                flakiness_score: 0.28,
+                                recent_failure_count: 5,
+                                risk_level: "high",
+                            },
+                        ],
+                    };
+                }
+                // Workflow context persistence — full in-memory mock
+                const opts = options;
+                const method = opts?.method || "GET";
+                if (path === "/api/web/v1/workflow-contexts" && method === "POST") {
+                    const body = opts?.body;
+                    const ctx = body?.context;
+                    if (ctx?.id) {
+                        mockContextStore.set(ctx.id, ctx);
+                        mockIdempotencyStore.set(ctx.idempotencyKey, ctx.id);
+                        mockEventStore.set(ctx.id, []);
+                    }
+                    return { status: "created" };
+                }
+                if (path === "/api/web/v1/workflow-contexts" && method === "GET") {
+                    const query = opts?.query;
+                    const key = query?.idempotency_key;
+                    const wfId = key ? mockIdempotencyStore.get(key) : undefined;
+                    const ctx = wfId ? mockContextStore.get(wfId) : undefined;
+                    return { context: ctx ?? null };
+                }
+                if (path.match(/\/api\/web\/v1\/workflow-contexts\/[^/]+$/) && method === "PUT") {
+                    const body = opts?.body;
+                    const ctx = body?.context;
+                    const wfId = path.split("/").pop();
+                    if (ctx) {
+                        mockContextStore.set(wfId, ctx);
+                        mockIdempotencyStore.set(ctx.idempotencyKey, wfId);
+                    }
+                    return { status: "updated" };
+                }
+                if (path.match(/\/api\/web\/v1\/workflow-contexts\/[^/]+$/) && method === "GET") {
+                    const wfId = path.split("/").pop();
+                    const ctx = mockContextStore.get(wfId);
+                    return { context: ctx ?? null };
+                }
+                if (path === "/api/web/v1/workflow-events" && method === "POST") {
+                    const body = opts?.body;
+                    const event = body?.event;
+                    const wfId = event?.workflowId;
+                    if (wfId) {
+                        const existing = mockEventStore.get(wfId) ?? [];
+                        existing.push(event);
+                        mockEventStore.set(wfId, existing);
+                    }
+                    return { status: "appended" };
+                }
+                if (path.match(/\/api\/web\/v1\/workflow-events\/.+/) && method === "GET") {
+                    const wfId = path.split("/").pop();
+                    return { events: mockEventStore.get(wfId) ?? [] };
+                }
                 throw new Error(`Unexpected mock backend path: ${path}`);
             },
         },
@@ -192,6 +269,8 @@ async function run() {
             executionMode: first.metadata.execution_mode,
             plannedStages: Object.values(first.execution_summary).filter(Boolean).length,
         },
+        // Full customer-facing response for inspection
+        customer_response: first,
     }, null, 2)}\n`);
 }
 run().catch((error) => {

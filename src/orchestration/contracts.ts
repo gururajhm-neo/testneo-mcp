@@ -120,6 +120,13 @@ export const ClaudeAnalysisSchema = z.object({
       severity: SeveritySchema,
     }),
   ),
+  // Engineering Memory risk factor — injected by DataDrivenClaudeAnalyzer when incident context present
+  riskFactors: z.array(z.object({
+    factor: z.string(),
+    score: z.number().min(0).max(100),
+    weight: z.number().min(0).max(1),
+    explanation: z.string(),
+  })).optional(),
 });
 export type ClaudeAnalysis = z.infer<typeof ClaudeAnalysisSchema>;
 
@@ -177,14 +184,117 @@ export const AffectedTestCandidateSchema = z.object({
   confidence_score: z.number().min(0).max(1).optional(),
   impact_level: z.string().optional(),
   reason: z.string().optional(),
+  // Historical risk signals enriched from TestRiskScore (Sprint 1)
+  failure_rate_7d: z.number().min(0).max(1).optional(),
+  failure_rate_30d: z.number().min(0).max(1).optional(),
+  flakiness_score: z.number().min(0).max(1).optional(),
+  recent_failure_count: z.number().int().min(0).optional(),
+  // Component-level context enriched from TestFunctionMapping (Sprint 2)
+  component_label: z.string().optional(),
+  component_failure_rate_7d: z.number().min(0).max(1).optional(),
+  // Sprint 3: blast radius provenance — how this test was discovered
+  blast_source: z.enum(["direct", "changed_file", "transitive_d1", "transitive_d2", "transitive_d3", "transitive_d4"]).optional(),
+  blast_depth: z.number().int().min(0).optional(),  // 0 = changed file, 1 = direct importer, etc.
+  blast_file_path: z.string().optional(),           // which expanded file this test covers
 });
 export type AffectedTestCandidate = z.infer<typeof AffectedTestCandidateSchema>;
+
+// Sprint 2: Component health entry — aggregated from TestRiskScore per component
+// .nullish() = accepts null | undefined | value — API returns null for missing numerics
+export const ComponentHealthEntrySchema = z.object({
+  component: z.string(),
+  failure_rate_7d: z.number().min(0).max(1).nullish(),
+  failure_rate_30d: z.number().min(0).max(1).nullish(),
+  flakiness_score: z.number().min(0).max(1).nullish(),
+  total_tests: z.number().int().min(0).nullish(),
+  tests_with_risk_data: z.number().int().min(0).nullish(),
+  high_risk_tests: z.number().int().min(0).nullish(),
+  risk_level: z.string().nullish(),  // "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN"
+  trend: z.string().nullish(),        // "worsening" | "improving" | "stable" | "insufficient_data"
+});
+export type ComponentHealthEntry = z.infer<typeof ComponentHealthEntrySchema>;
+
+// Sprint 3: A single file node in the transitive dependency blast radius
+export const DependencyNodeSchema = z.object({
+  file_path: z.string(),
+  depth: z.number().int().min(1),        // 1 = direct importer, 2 = transitive, …
+  imported_by: z.string(),               // immediate parent in BFS chain
+  component_label: z.string().optional(),
+  chain: z.array(z.string()),            // [changed_file, hop1, …, this_file]
+});
+export type DependencyNode = z.infer<typeof DependencyNodeSchema>;
+
+// Sprint 3: Full dependency blast radius result attached to ImpactAnalysisResult
+export const DependencyBlastSchema = z.object({
+  changed_files: z.array(z.string()),
+  expanded_files: z.array(z.string()),      // all transitively dependent files
+  nodes: z.array(DependencyNodeSchema),
+  direct_dependents: z.number().int().min(0),
+  transitive_dependents: z.number().int().min(0),
+  total_expanded: z.number().int().min(0),
+  max_depth: z.number().int().min(0),
+  affected_components: z.record(z.number()).optional(),  // {ComponentName: file_count}
+  has_structure: z.boolean().optional(),
+});
+export type DependencyBlast = z.infer<typeof DependencyBlastSchema>;
+
+// ─── Incident Context (Engineering Memory / Release Memory) ─────────────────
+
+export const IncidentMatchSchema = z.object({
+  match_id: z.string(),
+  match_type: z.enum(["prior_validation", "failure_pattern", "resolution", "test_history"]),
+  title: z.string(),
+  description: z.string(),
+  match_score: z.number().min(0).max(100),
+  match_tier: z.enum(["none", "low", "medium", "high"]),
+  component: z.string().optional(),
+  workflow_id: z.string().optional(),
+  pr_number: z.number().int().optional(),
+  risk_level: z.string().optional(),
+  risk_score: z.number().int().optional(),
+  pattern_label: z.string().optional(),
+  pattern_occurrences: z.number().int().optional(),
+  resolution_action: z.string().optional(),
+  root_cause: z.string().optional(),
+  success_rate: z.number().min(0).max(1).optional(),
+  cases_count: z.number().int().optional(),
+  avg_resolve_minutes: z.number().int().optional(),
+  occurred_at: z.string().optional(),
+  related_test_ids: z.array(z.number().int()).optional(),
+  overlapping_files: z.array(z.string()).optional(),
+  resolved_by_name: z.string().optional(),
+});
+export type IncidentMatch = z.infer<typeof IncidentMatchSchema>;
+
+export const IncidentContextSchema = z.object({
+  contract_version: z.literal("incident_context.v1"),
+  project_id: z.number().int().positive(),
+  match_count: z.number().int().min(0),
+  incident_match_score: z.number().min(0).max(100),
+  match_tier: z.enum(["none", "low", "medium", "high"]),
+  matches: z.array(IncidentMatchSchema),
+  top_resolution: z
+    .object({
+      action: z.string(),
+      root_cause: z.string().optional(),
+      success_rate: z.number().min(0).max(1).optional(),
+      cases_count: z.number().int().min(1),
+      avg_resolve_minutes: z.number().int().optional(),
+    })
+    .optional(),
+  insight: z.string(),
+});
+export type IncidentContext = z.infer<typeof IncidentContextSchema>;
 
 export const ImpactAnalysisResultSchema = z.object({
   affectedTests: z.array(AffectedTestCandidateSchema),
   summary: z.record(z.unknown()).optional(),
   recommendations: z.union([z.array(z.string()), z.record(z.unknown())]).optional(),
   source: z.enum(["git_refs", "manual_diff", "none"]).default("none"),
+  // Sprint 2: project-level component health, fetched alongside risk signals
+  componentHealth: z.array(ComponentHealthEntrySchema).optional(),
+  // Sprint 3: transitive dependency blast radius
+  dependencyBlast: DependencyBlastSchema.optional(),
 });
 export type ImpactAnalysisResult = z.infer<typeof ImpactAnalysisResultSchema>;
 
@@ -254,6 +364,28 @@ export const ValidatePrResponseSchema = z.object({
     passed_count: z.number().int().min(0),
     highest_severity: SeveritySchema,
     merge_signal: z.enum(["clean", "review", "block"]),
+    risk_score: z.number().min(0).max(100),
+    risk_level: z.enum(["PASS", "WARN", "BLOCK"]),
+    risk_factors: z.array(z.object({
+      factor: z.string(),
+      score: z.number().min(0).max(100),
+      weight: z.number().min(0).max(1),
+      explanation: z.string(),
+    })),
+    // Sprint 2: component health snapshot at time of validation
+    component_health: z.array(ComponentHealthEntrySchema).optional(),
+    // Sprint 3: dependency blast radius snapshot at time of validation
+    dependency_blast: DependencyBlastSchema.optional(),
+    // Sprint 3: blast→test bridge summary (gap metric)
+    blast_test_summary: z.object({
+      total_blast_tests: z.number().int().min(0),
+      tests_from_changed_files: z.number().int().min(0),
+      tests_from_transitive: z.number().int().min(0),
+      high_risk_transitive: z.number().int().min(0).optional(),
+      unique_components: z.number().int().min(0).optional(),
+    }).optional(),
+    // Engineering Memory: prior incidents, patterns, resolutions
+    incident_context: IncidentContextSchema.optional(),
   }),
   claude_analysis: ClaudeAnalysisSchema.optional(),
   comment_draft: z.string().optional(),

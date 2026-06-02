@@ -278,6 +278,22 @@ export declare const ClaudeAnalysisSchema: z.ZodObject<{
         severity: "high" | "medium" | "low" | "critical" | "info";
         path?: string | undefined;
     }>, "many">;
+    riskFactors: z.ZodOptional<z.ZodArray<z.ZodObject<{
+        factor: z.ZodString;
+        score: z.ZodNumber;
+        weight: z.ZodNumber;
+        explanation: z.ZodString;
+    }, "strip", z.ZodTypeAny, {
+        factor: string;
+        score: number;
+        weight: number;
+        explanation: string;
+    }, {
+        factor: string;
+        score: number;
+        weight: number;
+        explanation: string;
+    }>, "many">>;
 }, "strip", z.ZodTypeAny, {
     confidence: number;
     suggestedFixes: {
@@ -300,6 +316,12 @@ export declare const ClaudeAnalysisSchema: z.ZodObject<{
         severity: "high" | "medium" | "low" | "critical" | "info";
         path?: string | undefined;
     }[];
+    riskFactors?: {
+        factor: string;
+        score: number;
+        weight: number;
+        explanation: string;
+    }[] | undefined;
 }, {
     confidence: number;
     suggestedFixes: {
@@ -322,6 +344,12 @@ export declare const ClaudeAnalysisSchema: z.ZodObject<{
         severity: "high" | "medium" | "low" | "critical" | "info";
         path?: string | undefined;
     }[];
+    riskFactors?: {
+        factor: string;
+        score: number;
+        weight: number;
+        explanation: string;
+    }[] | undefined;
 }>;
 export type ClaudeAnalysis = z.infer<typeof ClaudeAnalysisSchema>;
 export declare const WorkflowContextSchema: z.ZodObject<{
@@ -829,6 +857,22 @@ export declare const WorkflowContextSchema: z.ZodObject<{
             severity: "high" | "medium" | "low" | "critical" | "info";
             path?: string | undefined;
         }>, "many">;
+        riskFactors: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            factor: z.ZodString;
+            score: z.ZodNumber;
+            weight: z.ZodNumber;
+            explanation: z.ZodString;
+        }, "strip", z.ZodTypeAny, {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }, {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }>, "many">>;
     }, "strip", z.ZodTypeAny, {
         confidence: number;
         suggestedFixes: {
@@ -851,6 +895,12 @@ export declare const WorkflowContextSchema: z.ZodObject<{
             severity: "high" | "medium" | "low" | "critical" | "info";
             path?: string | undefined;
         }[];
+        riskFactors?: {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }[] | undefined;
     }, {
         confidence: number;
         suggestedFixes: {
@@ -873,6 +923,12 @@ export declare const WorkflowContextSchema: z.ZodObject<{
             severity: "high" | "medium" | "low" | "critical" | "info";
             path?: string | undefined;
         }[];
+        riskFactors?: {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }[] | undefined;
     }>>;
     suggestedFixes: z.ZodArray<z.ZodString, "many">;
     metadata: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -1021,6 +1077,12 @@ export declare const WorkflowContextSchema: z.ZodObject<{
             severity: "high" | "medium" | "low" | "critical" | "info";
             path?: string | undefined;
         }[];
+        riskFactors?: {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }[] | undefined;
     } | undefined;
 }, {
     status: "failed" | "cancelled" | "completed" | "executing" | "initialized" | "planning" | "aggregating" | "publishing" | "analyzing" | "commenting" | "partial_failed";
@@ -1167,6 +1229,12 @@ export declare const WorkflowContextSchema: z.ZodObject<{
             severity: "high" | "medium" | "low" | "critical" | "info";
             path?: string | undefined;
         }[];
+        riskFactors?: {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }[] | undefined;
     } | undefined;
 }>;
 export type WorkflowContext = z.infer<typeof WorkflowContextSchema>;
@@ -1198,6 +1266,15 @@ export declare const AffectedTestCandidateSchema: z.ZodObject<{
     confidence_score: z.ZodOptional<z.ZodNumber>;
     impact_level: z.ZodOptional<z.ZodString>;
     reason: z.ZodOptional<z.ZodString>;
+    failure_rate_7d: z.ZodOptional<z.ZodNumber>;
+    failure_rate_30d: z.ZodOptional<z.ZodNumber>;
+    flakiness_score: z.ZodOptional<z.ZodNumber>;
+    recent_failure_count: z.ZodOptional<z.ZodNumber>;
+    component_label: z.ZodOptional<z.ZodString>;
+    component_failure_rate_7d: z.ZodOptional<z.ZodNumber>;
+    blast_source: z.ZodOptional<z.ZodEnum<["direct", "changed_file", "transitive_d1", "transitive_d2", "transitive_d3", "transitive_d4"]>>;
+    blast_depth: z.ZodOptional<z.ZodNumber>;
+    blast_file_path: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     reason?: string | undefined;
     confidence?: number | undefined;
@@ -1206,6 +1283,15 @@ export declare const AffectedTestCandidateSchema: z.ZodObject<{
     function_name?: string | undefined;
     confidence_score?: number | undefined;
     impact_level?: string | undefined;
+    failure_rate_7d?: number | undefined;
+    failure_rate_30d?: number | undefined;
+    flakiness_score?: number | undefined;
+    recent_failure_count?: number | undefined;
+    component_label?: string | undefined;
+    component_failure_rate_7d?: number | undefined;
+    blast_source?: "direct" | "changed_file" | "transitive_d1" | "transitive_d2" | "transitive_d3" | "transitive_d4" | undefined;
+    blast_depth?: number | undefined;
+    blast_file_path?: string | undefined;
 }, {
     reason?: string | undefined;
     confidence?: number | undefined;
@@ -1214,8 +1300,376 @@ export declare const AffectedTestCandidateSchema: z.ZodObject<{
     function_name?: string | undefined;
     confidence_score?: number | undefined;
     impact_level?: string | undefined;
+    failure_rate_7d?: number | undefined;
+    failure_rate_30d?: number | undefined;
+    flakiness_score?: number | undefined;
+    recent_failure_count?: number | undefined;
+    component_label?: string | undefined;
+    component_failure_rate_7d?: number | undefined;
+    blast_source?: "direct" | "changed_file" | "transitive_d1" | "transitive_d2" | "transitive_d3" | "transitive_d4" | undefined;
+    blast_depth?: number | undefined;
+    blast_file_path?: string | undefined;
 }>;
 export type AffectedTestCandidate = z.infer<typeof AffectedTestCandidateSchema>;
+export declare const ComponentHealthEntrySchema: z.ZodObject<{
+    component: z.ZodString;
+    failure_rate_7d: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+    failure_rate_30d: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+    flakiness_score: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+    total_tests: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+    tests_with_risk_data: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+    high_risk_tests: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+    risk_level: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    trend: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+}, "strip", z.ZodTypeAny, {
+    component: string;
+    failure_rate_7d?: number | null | undefined;
+    failure_rate_30d?: number | null | undefined;
+    flakiness_score?: number | null | undefined;
+    total_tests?: number | null | undefined;
+    tests_with_risk_data?: number | null | undefined;
+    high_risk_tests?: number | null | undefined;
+    risk_level?: string | null | undefined;
+    trend?: string | null | undefined;
+}, {
+    component: string;
+    failure_rate_7d?: number | null | undefined;
+    failure_rate_30d?: number | null | undefined;
+    flakiness_score?: number | null | undefined;
+    total_tests?: number | null | undefined;
+    tests_with_risk_data?: number | null | undefined;
+    high_risk_tests?: number | null | undefined;
+    risk_level?: string | null | undefined;
+    trend?: string | null | undefined;
+}>;
+export type ComponentHealthEntry = z.infer<typeof ComponentHealthEntrySchema>;
+export declare const DependencyNodeSchema: z.ZodObject<{
+    file_path: z.ZodString;
+    depth: z.ZodNumber;
+    imported_by: z.ZodString;
+    component_label: z.ZodOptional<z.ZodString>;
+    chain: z.ZodArray<z.ZodString, "many">;
+}, "strip", z.ZodTypeAny, {
+    file_path: string;
+    depth: number;
+    imported_by: string;
+    chain: string[];
+    component_label?: string | undefined;
+}, {
+    file_path: string;
+    depth: number;
+    imported_by: string;
+    chain: string[];
+    component_label?: string | undefined;
+}>;
+export type DependencyNode = z.infer<typeof DependencyNodeSchema>;
+export declare const DependencyBlastSchema: z.ZodObject<{
+    changed_files: z.ZodArray<z.ZodString, "many">;
+    expanded_files: z.ZodArray<z.ZodString, "many">;
+    nodes: z.ZodArray<z.ZodObject<{
+        file_path: z.ZodString;
+        depth: z.ZodNumber;
+        imported_by: z.ZodString;
+        component_label: z.ZodOptional<z.ZodString>;
+        chain: z.ZodArray<z.ZodString, "many">;
+    }, "strip", z.ZodTypeAny, {
+        file_path: string;
+        depth: number;
+        imported_by: string;
+        chain: string[];
+        component_label?: string | undefined;
+    }, {
+        file_path: string;
+        depth: number;
+        imported_by: string;
+        chain: string[];
+        component_label?: string | undefined;
+    }>, "many">;
+    direct_dependents: z.ZodNumber;
+    transitive_dependents: z.ZodNumber;
+    total_expanded: z.ZodNumber;
+    max_depth: z.ZodNumber;
+    affected_components: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodNumber>>;
+    has_structure: z.ZodOptional<z.ZodBoolean>;
+}, "strip", z.ZodTypeAny, {
+    changed_files: string[];
+    expanded_files: string[];
+    nodes: {
+        file_path: string;
+        depth: number;
+        imported_by: string;
+        chain: string[];
+        component_label?: string | undefined;
+    }[];
+    direct_dependents: number;
+    transitive_dependents: number;
+    total_expanded: number;
+    max_depth: number;
+    affected_components?: Record<string, number> | undefined;
+    has_structure?: boolean | undefined;
+}, {
+    changed_files: string[];
+    expanded_files: string[];
+    nodes: {
+        file_path: string;
+        depth: number;
+        imported_by: string;
+        chain: string[];
+        component_label?: string | undefined;
+    }[];
+    direct_dependents: number;
+    transitive_dependents: number;
+    total_expanded: number;
+    max_depth: number;
+    affected_components?: Record<string, number> | undefined;
+    has_structure?: boolean | undefined;
+}>;
+export type DependencyBlast = z.infer<typeof DependencyBlastSchema>;
+export declare const IncidentMatchSchema: z.ZodObject<{
+    match_id: z.ZodString;
+    match_type: z.ZodEnum<["prior_validation", "failure_pattern", "resolution", "test_history"]>;
+    title: z.ZodString;
+    description: z.ZodString;
+    match_score: z.ZodNumber;
+    match_tier: z.ZodEnum<["none", "low", "medium", "high"]>;
+    component: z.ZodOptional<z.ZodString>;
+    workflow_id: z.ZodOptional<z.ZodString>;
+    pr_number: z.ZodOptional<z.ZodNumber>;
+    risk_level: z.ZodOptional<z.ZodString>;
+    risk_score: z.ZodOptional<z.ZodNumber>;
+    pattern_label: z.ZodOptional<z.ZodString>;
+    pattern_occurrences: z.ZodOptional<z.ZodNumber>;
+    resolution_action: z.ZodOptional<z.ZodString>;
+    root_cause: z.ZodOptional<z.ZodString>;
+    success_rate: z.ZodOptional<z.ZodNumber>;
+    cases_count: z.ZodOptional<z.ZodNumber>;
+    avg_resolve_minutes: z.ZodOptional<z.ZodNumber>;
+    occurred_at: z.ZodOptional<z.ZodString>;
+    related_test_ids: z.ZodOptional<z.ZodArray<z.ZodNumber, "many">>;
+    overlapping_files: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+    resolved_by_name: z.ZodOptional<z.ZodString>;
+}, "strip", z.ZodTypeAny, {
+    title: string;
+    match_id: string;
+    match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+    description: string;
+    match_score: number;
+    match_tier: "none" | "high" | "medium" | "low";
+    component?: string | undefined;
+    risk_level?: string | undefined;
+    workflow_id?: string | undefined;
+    pr_number?: number | undefined;
+    risk_score?: number | undefined;
+    pattern_label?: string | undefined;
+    pattern_occurrences?: number | undefined;
+    resolution_action?: string | undefined;
+    root_cause?: string | undefined;
+    success_rate?: number | undefined;
+    cases_count?: number | undefined;
+    avg_resolve_minutes?: number | undefined;
+    occurred_at?: string | undefined;
+    related_test_ids?: number[] | undefined;
+    overlapping_files?: string[] | undefined;
+    resolved_by_name?: string | undefined;
+}, {
+    title: string;
+    match_id: string;
+    match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+    description: string;
+    match_score: number;
+    match_tier: "none" | "high" | "medium" | "low";
+    component?: string | undefined;
+    risk_level?: string | undefined;
+    workflow_id?: string | undefined;
+    pr_number?: number | undefined;
+    risk_score?: number | undefined;
+    pattern_label?: string | undefined;
+    pattern_occurrences?: number | undefined;
+    resolution_action?: string | undefined;
+    root_cause?: string | undefined;
+    success_rate?: number | undefined;
+    cases_count?: number | undefined;
+    avg_resolve_minutes?: number | undefined;
+    occurred_at?: string | undefined;
+    related_test_ids?: number[] | undefined;
+    overlapping_files?: string[] | undefined;
+    resolved_by_name?: string | undefined;
+}>;
+export type IncidentMatch = z.infer<typeof IncidentMatchSchema>;
+export declare const IncidentContextSchema: z.ZodObject<{
+    contract_version: z.ZodLiteral<"incident_context.v1">;
+    project_id: z.ZodNumber;
+    match_count: z.ZodNumber;
+    incident_match_score: z.ZodNumber;
+    match_tier: z.ZodEnum<["none", "low", "medium", "high"]>;
+    matches: z.ZodArray<z.ZodObject<{
+        match_id: z.ZodString;
+        match_type: z.ZodEnum<["prior_validation", "failure_pattern", "resolution", "test_history"]>;
+        title: z.ZodString;
+        description: z.ZodString;
+        match_score: z.ZodNumber;
+        match_tier: z.ZodEnum<["none", "low", "medium", "high"]>;
+        component: z.ZodOptional<z.ZodString>;
+        workflow_id: z.ZodOptional<z.ZodString>;
+        pr_number: z.ZodOptional<z.ZodNumber>;
+        risk_level: z.ZodOptional<z.ZodString>;
+        risk_score: z.ZodOptional<z.ZodNumber>;
+        pattern_label: z.ZodOptional<z.ZodString>;
+        pattern_occurrences: z.ZodOptional<z.ZodNumber>;
+        resolution_action: z.ZodOptional<z.ZodString>;
+        root_cause: z.ZodOptional<z.ZodString>;
+        success_rate: z.ZodOptional<z.ZodNumber>;
+        cases_count: z.ZodOptional<z.ZodNumber>;
+        avg_resolve_minutes: z.ZodOptional<z.ZodNumber>;
+        occurred_at: z.ZodOptional<z.ZodString>;
+        related_test_ids: z.ZodOptional<z.ZodArray<z.ZodNumber, "many">>;
+        overlapping_files: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+        resolved_by_name: z.ZodOptional<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        title: string;
+        match_id: string;
+        match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+        description: string;
+        match_score: number;
+        match_tier: "none" | "high" | "medium" | "low";
+        component?: string | undefined;
+        risk_level?: string | undefined;
+        workflow_id?: string | undefined;
+        pr_number?: number | undefined;
+        risk_score?: number | undefined;
+        pattern_label?: string | undefined;
+        pattern_occurrences?: number | undefined;
+        resolution_action?: string | undefined;
+        root_cause?: string | undefined;
+        success_rate?: number | undefined;
+        cases_count?: number | undefined;
+        avg_resolve_minutes?: number | undefined;
+        occurred_at?: string | undefined;
+        related_test_ids?: number[] | undefined;
+        overlapping_files?: string[] | undefined;
+        resolved_by_name?: string | undefined;
+    }, {
+        title: string;
+        match_id: string;
+        match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+        description: string;
+        match_score: number;
+        match_tier: "none" | "high" | "medium" | "low";
+        component?: string | undefined;
+        risk_level?: string | undefined;
+        workflow_id?: string | undefined;
+        pr_number?: number | undefined;
+        risk_score?: number | undefined;
+        pattern_label?: string | undefined;
+        pattern_occurrences?: number | undefined;
+        resolution_action?: string | undefined;
+        root_cause?: string | undefined;
+        success_rate?: number | undefined;
+        cases_count?: number | undefined;
+        avg_resolve_minutes?: number | undefined;
+        occurred_at?: string | undefined;
+        related_test_ids?: number[] | undefined;
+        overlapping_files?: string[] | undefined;
+        resolved_by_name?: string | undefined;
+    }>, "many">;
+    top_resolution: z.ZodOptional<z.ZodObject<{
+        action: z.ZodString;
+        root_cause: z.ZodOptional<z.ZodString>;
+        success_rate: z.ZodOptional<z.ZodNumber>;
+        cases_count: z.ZodNumber;
+        avg_resolve_minutes: z.ZodOptional<z.ZodNumber>;
+    }, "strip", z.ZodTypeAny, {
+        cases_count: number;
+        action: string;
+        root_cause?: string | undefined;
+        success_rate?: number | undefined;
+        avg_resolve_minutes?: number | undefined;
+    }, {
+        cases_count: number;
+        action: string;
+        root_cause?: string | undefined;
+        success_rate?: number | undefined;
+        avg_resolve_minutes?: number | undefined;
+    }>>;
+    insight: z.ZodString;
+}, "strip", z.ZodTypeAny, {
+    match_tier: "none" | "high" | "medium" | "low";
+    contract_version: "incident_context.v1";
+    project_id: number;
+    match_count: number;
+    incident_match_score: number;
+    matches: {
+        title: string;
+        match_id: string;
+        match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+        description: string;
+        match_score: number;
+        match_tier: "none" | "high" | "medium" | "low";
+        component?: string | undefined;
+        risk_level?: string | undefined;
+        workflow_id?: string | undefined;
+        pr_number?: number | undefined;
+        risk_score?: number | undefined;
+        pattern_label?: string | undefined;
+        pattern_occurrences?: number | undefined;
+        resolution_action?: string | undefined;
+        root_cause?: string | undefined;
+        success_rate?: number | undefined;
+        cases_count?: number | undefined;
+        avg_resolve_minutes?: number | undefined;
+        occurred_at?: string | undefined;
+        related_test_ids?: number[] | undefined;
+        overlapping_files?: string[] | undefined;
+        resolved_by_name?: string | undefined;
+    }[];
+    insight: string;
+    top_resolution?: {
+        cases_count: number;
+        action: string;
+        root_cause?: string | undefined;
+        success_rate?: number | undefined;
+        avg_resolve_minutes?: number | undefined;
+    } | undefined;
+}, {
+    match_tier: "none" | "high" | "medium" | "low";
+    contract_version: "incident_context.v1";
+    project_id: number;
+    match_count: number;
+    incident_match_score: number;
+    matches: {
+        title: string;
+        match_id: string;
+        match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+        description: string;
+        match_score: number;
+        match_tier: "none" | "high" | "medium" | "low";
+        component?: string | undefined;
+        risk_level?: string | undefined;
+        workflow_id?: string | undefined;
+        pr_number?: number | undefined;
+        risk_score?: number | undefined;
+        pattern_label?: string | undefined;
+        pattern_occurrences?: number | undefined;
+        resolution_action?: string | undefined;
+        root_cause?: string | undefined;
+        success_rate?: number | undefined;
+        cases_count?: number | undefined;
+        avg_resolve_minutes?: number | undefined;
+        occurred_at?: string | undefined;
+        related_test_ids?: number[] | undefined;
+        overlapping_files?: string[] | undefined;
+        resolved_by_name?: string | undefined;
+    }[];
+    insight: string;
+    top_resolution?: {
+        cases_count: number;
+        action: string;
+        root_cause?: string | undefined;
+        success_rate?: number | undefined;
+        avg_resolve_minutes?: number | undefined;
+    } | undefined;
+}>;
+export type IncidentContext = z.infer<typeof IncidentContextSchema>;
 export declare const ImpactAnalysisResultSchema: z.ZodObject<{
     affectedTests: z.ZodArray<z.ZodObject<{
         test_id: z.ZodOptional<z.ZodNumber>;
@@ -1225,6 +1679,15 @@ export declare const ImpactAnalysisResultSchema: z.ZodObject<{
         confidence_score: z.ZodOptional<z.ZodNumber>;
         impact_level: z.ZodOptional<z.ZodString>;
         reason: z.ZodOptional<z.ZodString>;
+        failure_rate_7d: z.ZodOptional<z.ZodNumber>;
+        failure_rate_30d: z.ZodOptional<z.ZodNumber>;
+        flakiness_score: z.ZodOptional<z.ZodNumber>;
+        recent_failure_count: z.ZodOptional<z.ZodNumber>;
+        component_label: z.ZodOptional<z.ZodString>;
+        component_failure_rate_7d: z.ZodOptional<z.ZodNumber>;
+        blast_source: z.ZodOptional<z.ZodEnum<["direct", "changed_file", "transitive_d1", "transitive_d2", "transitive_d3", "transitive_d4"]>>;
+        blast_depth: z.ZodOptional<z.ZodNumber>;
+        blast_file_path: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         reason?: string | undefined;
         confidence?: number | undefined;
@@ -1233,6 +1696,15 @@ export declare const ImpactAnalysisResultSchema: z.ZodObject<{
         function_name?: string | undefined;
         confidence_score?: number | undefined;
         impact_level?: string | undefined;
+        failure_rate_7d?: number | undefined;
+        failure_rate_30d?: number | undefined;
+        flakiness_score?: number | undefined;
+        recent_failure_count?: number | undefined;
+        component_label?: string | undefined;
+        component_failure_rate_7d?: number | undefined;
+        blast_source?: "direct" | "changed_file" | "transitive_d1" | "transitive_d2" | "transitive_d3" | "transitive_d4" | undefined;
+        blast_depth?: number | undefined;
+        blast_file_path?: string | undefined;
     }, {
         reason?: string | undefined;
         confidence?: number | undefined;
@@ -1241,10 +1713,111 @@ export declare const ImpactAnalysisResultSchema: z.ZodObject<{
         function_name?: string | undefined;
         confidence_score?: number | undefined;
         impact_level?: string | undefined;
+        failure_rate_7d?: number | undefined;
+        failure_rate_30d?: number | undefined;
+        flakiness_score?: number | undefined;
+        recent_failure_count?: number | undefined;
+        component_label?: string | undefined;
+        component_failure_rate_7d?: number | undefined;
+        blast_source?: "direct" | "changed_file" | "transitive_d1" | "transitive_d2" | "transitive_d3" | "transitive_d4" | undefined;
+        blast_depth?: number | undefined;
+        blast_file_path?: string | undefined;
     }>, "many">;
     summary: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     recommendations: z.ZodOptional<z.ZodUnion<[z.ZodArray<z.ZodString, "many">, z.ZodRecord<z.ZodString, z.ZodUnknown>]>>;
     source: z.ZodDefault<z.ZodEnum<["git_refs", "manual_diff", "none"]>>;
+    componentHealth: z.ZodOptional<z.ZodArray<z.ZodObject<{
+        component: z.ZodString;
+        failure_rate_7d: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+        failure_rate_30d: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+        flakiness_score: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+        total_tests: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+        tests_with_risk_data: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+        high_risk_tests: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+        risk_level: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+        trend: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    }, "strip", z.ZodTypeAny, {
+        component: string;
+        failure_rate_7d?: number | null | undefined;
+        failure_rate_30d?: number | null | undefined;
+        flakiness_score?: number | null | undefined;
+        total_tests?: number | null | undefined;
+        tests_with_risk_data?: number | null | undefined;
+        high_risk_tests?: number | null | undefined;
+        risk_level?: string | null | undefined;
+        trend?: string | null | undefined;
+    }, {
+        component: string;
+        failure_rate_7d?: number | null | undefined;
+        failure_rate_30d?: number | null | undefined;
+        flakiness_score?: number | null | undefined;
+        total_tests?: number | null | undefined;
+        tests_with_risk_data?: number | null | undefined;
+        high_risk_tests?: number | null | undefined;
+        risk_level?: string | null | undefined;
+        trend?: string | null | undefined;
+    }>, "many">>;
+    dependencyBlast: z.ZodOptional<z.ZodObject<{
+        changed_files: z.ZodArray<z.ZodString, "many">;
+        expanded_files: z.ZodArray<z.ZodString, "many">;
+        nodes: z.ZodArray<z.ZodObject<{
+            file_path: z.ZodString;
+            depth: z.ZodNumber;
+            imported_by: z.ZodString;
+            component_label: z.ZodOptional<z.ZodString>;
+            chain: z.ZodArray<z.ZodString, "many">;
+        }, "strip", z.ZodTypeAny, {
+            file_path: string;
+            depth: number;
+            imported_by: string;
+            chain: string[];
+            component_label?: string | undefined;
+        }, {
+            file_path: string;
+            depth: number;
+            imported_by: string;
+            chain: string[];
+            component_label?: string | undefined;
+        }>, "many">;
+        direct_dependents: z.ZodNumber;
+        transitive_dependents: z.ZodNumber;
+        total_expanded: z.ZodNumber;
+        max_depth: z.ZodNumber;
+        affected_components: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodNumber>>;
+        has_structure: z.ZodOptional<z.ZodBoolean>;
+    }, "strip", z.ZodTypeAny, {
+        changed_files: string[];
+        expanded_files: string[];
+        nodes: {
+            file_path: string;
+            depth: number;
+            imported_by: string;
+            chain: string[];
+            component_label?: string | undefined;
+        }[];
+        direct_dependents: number;
+        transitive_dependents: number;
+        total_expanded: number;
+        max_depth: number;
+        affected_components?: Record<string, number> | undefined;
+        has_structure?: boolean | undefined;
+    }, {
+        changed_files: string[];
+        expanded_files: string[];
+        nodes: {
+            file_path: string;
+            depth: number;
+            imported_by: string;
+            chain: string[];
+            component_label?: string | undefined;
+        }[];
+        direct_dependents: number;
+        transitive_dependents: number;
+        total_expanded: number;
+        max_depth: number;
+        affected_components?: Record<string, number> | undefined;
+        has_structure?: boolean | undefined;
+    }>>;
 }, "strip", z.ZodTypeAny, {
     source: "none" | "git_refs" | "manual_diff";
     affectedTests: {
@@ -1255,9 +1828,46 @@ export declare const ImpactAnalysisResultSchema: z.ZodObject<{
         function_name?: string | undefined;
         confidence_score?: number | undefined;
         impact_level?: string | undefined;
+        failure_rate_7d?: number | undefined;
+        failure_rate_30d?: number | undefined;
+        flakiness_score?: number | undefined;
+        recent_failure_count?: number | undefined;
+        component_label?: string | undefined;
+        component_failure_rate_7d?: number | undefined;
+        blast_source?: "direct" | "changed_file" | "transitive_d1" | "transitive_d2" | "transitive_d3" | "transitive_d4" | undefined;
+        blast_depth?: number | undefined;
+        blast_file_path?: string | undefined;
     }[];
     summary?: Record<string, unknown> | undefined;
     recommendations?: Record<string, unknown> | string[] | undefined;
+    componentHealth?: {
+        component: string;
+        failure_rate_7d?: number | null | undefined;
+        failure_rate_30d?: number | null | undefined;
+        flakiness_score?: number | null | undefined;
+        total_tests?: number | null | undefined;
+        tests_with_risk_data?: number | null | undefined;
+        high_risk_tests?: number | null | undefined;
+        risk_level?: string | null | undefined;
+        trend?: string | null | undefined;
+    }[] | undefined;
+    dependencyBlast?: {
+        changed_files: string[];
+        expanded_files: string[];
+        nodes: {
+            file_path: string;
+            depth: number;
+            imported_by: string;
+            chain: string[];
+            component_label?: string | undefined;
+        }[];
+        direct_dependents: number;
+        transitive_dependents: number;
+        total_expanded: number;
+        max_depth: number;
+        affected_components?: Record<string, number> | undefined;
+        has_structure?: boolean | undefined;
+    } | undefined;
 }, {
     affectedTests: {
         reason?: string | undefined;
@@ -1267,10 +1877,47 @@ export declare const ImpactAnalysisResultSchema: z.ZodObject<{
         function_name?: string | undefined;
         confidence_score?: number | undefined;
         impact_level?: string | undefined;
+        failure_rate_7d?: number | undefined;
+        failure_rate_30d?: number | undefined;
+        flakiness_score?: number | undefined;
+        recent_failure_count?: number | undefined;
+        component_label?: string | undefined;
+        component_failure_rate_7d?: number | undefined;
+        blast_source?: "direct" | "changed_file" | "transitive_d1" | "transitive_d2" | "transitive_d3" | "transitive_d4" | undefined;
+        blast_depth?: number | undefined;
+        blast_file_path?: string | undefined;
     }[];
     source?: "none" | "git_refs" | "manual_diff" | undefined;
     summary?: Record<string, unknown> | undefined;
     recommendations?: Record<string, unknown> | string[] | undefined;
+    componentHealth?: {
+        component: string;
+        failure_rate_7d?: number | null | undefined;
+        failure_rate_30d?: number | null | undefined;
+        flakiness_score?: number | null | undefined;
+        total_tests?: number | null | undefined;
+        tests_with_risk_data?: number | null | undefined;
+        high_risk_tests?: number | null | undefined;
+        risk_level?: string | null | undefined;
+        trend?: string | null | undefined;
+    }[] | undefined;
+    dependencyBlast?: {
+        changed_files: string[];
+        expanded_files: string[];
+        nodes: {
+            file_path: string;
+            depth: number;
+            imported_by: string;
+            chain: string[];
+            component_label?: string | undefined;
+        }[];
+        direct_dependents: number;
+        transitive_dependents: number;
+        total_expanded: number;
+        max_depth: number;
+        affected_components?: Record<string, number> | undefined;
+        has_structure?: boolean | undefined;
+    } | undefined;
 }>;
 export type ImpactAnalysisResult = z.infer<typeof ImpactAnalysisResultSchema>;
 export declare const ValidatePrRequestSchema: z.ZodObject<{
@@ -1324,7 +1971,6 @@ export declare const ValidatePrRequestSchema: z.ZodObject<{
     }, "strip", z.ZodTypeAny, {
         base_sha: string;
         head_sha: string;
-        diff_content?: string | undefined;
         changed_files?: {
             status: "added" | "modified" | "deleted" | "renamed";
             path: string;
@@ -1333,10 +1979,10 @@ export declare const ValidatePrRequestSchema: z.ZodObject<{
             language?: string | undefined;
             patch?: string | undefined;
         }[] | undefined;
+        diff_content?: string | undefined;
     }, {
         base_sha: string;
         head_sha: string;
-        diff_content?: string | undefined;
         changed_files?: {
             status: "added" | "modified" | "deleted" | "renamed";
             path: string;
@@ -1345,6 +1991,7 @@ export declare const ValidatePrRequestSchema: z.ZodObject<{
             language?: string | undefined;
             patch?: string | undefined;
         }[] | undefined;
+        diff_content?: string | undefined;
     }>;
     execution: z.ZodDefault<z.ZodObject<{
         run_impacted_tests: z.ZodDefault<z.ZodBoolean>;
@@ -1390,7 +2037,6 @@ export declare const ValidatePrRequestSchema: z.ZodObject<{
     git: {
         base_sha: string;
         head_sha: string;
-        diff_content?: string | undefined;
         changed_files?: {
             status: "added" | "modified" | "deleted" | "renamed";
             path: string;
@@ -1399,6 +2045,7 @@ export declare const ValidatePrRequestSchema: z.ZodObject<{
             language?: string | undefined;
             patch?: string | undefined;
         }[] | undefined;
+        diff_content?: string | undefined;
     };
     execution: {
         run_impacted_tests: boolean;
@@ -1426,7 +2073,6 @@ export declare const ValidatePrRequestSchema: z.ZodObject<{
     git: {
         base_sha: string;
         head_sha: string;
-        diff_content?: string | undefined;
         changed_files?: {
             status: "added" | "modified" | "deleted" | "renamed";
             path: string;
@@ -1435,6 +2081,7 @@ export declare const ValidatePrRequestSchema: z.ZodObject<{
             language?: string | undefined;
             patch?: string | undefined;
         }[] | undefined;
+        diff_content?: string | undefined;
     };
     execution?: {
         run_impacted_tests?: boolean | undefined;
@@ -1465,15 +2112,15 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
     }, "strip", z.ZodTypeAny, {
         name: string;
         owner: string;
+        pr_number: number;
         base_sha: string;
         head_sha: string;
-        pr_number: number;
     }, {
         name: string;
         owner: string;
+        pr_number: number;
         base_sha: string;
         head_sha: string;
-        pr_number: number;
     }>;
     impact_summary: z.ZodObject<{
         changed_files: z.ZodNumber;
@@ -1801,18 +2448,484 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
         passed_count: z.ZodNumber;
         highest_severity: z.ZodEnum<["critical", "high", "medium", "low", "info"]>;
         merge_signal: z.ZodEnum<["clean", "review", "block"]>;
+        risk_score: z.ZodNumber;
+        risk_level: z.ZodEnum<["PASS", "WARN", "BLOCK"]>;
+        risk_factors: z.ZodArray<z.ZodObject<{
+            factor: z.ZodString;
+            score: z.ZodNumber;
+            weight: z.ZodNumber;
+            explanation: z.ZodString;
+        }, "strip", z.ZodTypeAny, {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }, {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }>, "many">;
+        component_health: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            component: z.ZodString;
+            failure_rate_7d: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+            failure_rate_30d: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+            flakiness_score: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+            total_tests: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+            tests_with_risk_data: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+            high_risk_tests: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+            risk_level: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+            trend: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+        }, "strip", z.ZodTypeAny, {
+            component: string;
+            failure_rate_7d?: number | null | undefined;
+            failure_rate_30d?: number | null | undefined;
+            flakiness_score?: number | null | undefined;
+            total_tests?: number | null | undefined;
+            tests_with_risk_data?: number | null | undefined;
+            high_risk_tests?: number | null | undefined;
+            risk_level?: string | null | undefined;
+            trend?: string | null | undefined;
+        }, {
+            component: string;
+            failure_rate_7d?: number | null | undefined;
+            failure_rate_30d?: number | null | undefined;
+            flakiness_score?: number | null | undefined;
+            total_tests?: number | null | undefined;
+            tests_with_risk_data?: number | null | undefined;
+            high_risk_tests?: number | null | undefined;
+            risk_level?: string | null | undefined;
+            trend?: string | null | undefined;
+        }>, "many">>;
+        dependency_blast: z.ZodOptional<z.ZodObject<{
+            changed_files: z.ZodArray<z.ZodString, "many">;
+            expanded_files: z.ZodArray<z.ZodString, "many">;
+            nodes: z.ZodArray<z.ZodObject<{
+                file_path: z.ZodString;
+                depth: z.ZodNumber;
+                imported_by: z.ZodString;
+                component_label: z.ZodOptional<z.ZodString>;
+                chain: z.ZodArray<z.ZodString, "many">;
+            }, "strip", z.ZodTypeAny, {
+                file_path: string;
+                depth: number;
+                imported_by: string;
+                chain: string[];
+                component_label?: string | undefined;
+            }, {
+                file_path: string;
+                depth: number;
+                imported_by: string;
+                chain: string[];
+                component_label?: string | undefined;
+            }>, "many">;
+            direct_dependents: z.ZodNumber;
+            transitive_dependents: z.ZodNumber;
+            total_expanded: z.ZodNumber;
+            max_depth: z.ZodNumber;
+            affected_components: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodNumber>>;
+            has_structure: z.ZodOptional<z.ZodBoolean>;
+        }, "strip", z.ZodTypeAny, {
+            changed_files: string[];
+            expanded_files: string[];
+            nodes: {
+                file_path: string;
+                depth: number;
+                imported_by: string;
+                chain: string[];
+                component_label?: string | undefined;
+            }[];
+            direct_dependents: number;
+            transitive_dependents: number;
+            total_expanded: number;
+            max_depth: number;
+            affected_components?: Record<string, number> | undefined;
+            has_structure?: boolean | undefined;
+        }, {
+            changed_files: string[];
+            expanded_files: string[];
+            nodes: {
+                file_path: string;
+                depth: number;
+                imported_by: string;
+                chain: string[];
+                component_label?: string | undefined;
+            }[];
+            direct_dependents: number;
+            transitive_dependents: number;
+            total_expanded: number;
+            max_depth: number;
+            affected_components?: Record<string, number> | undefined;
+            has_structure?: boolean | undefined;
+        }>>;
+        blast_test_summary: z.ZodOptional<z.ZodObject<{
+            total_blast_tests: z.ZodNumber;
+            tests_from_changed_files: z.ZodNumber;
+            tests_from_transitive: z.ZodNumber;
+            high_risk_transitive: z.ZodOptional<z.ZodNumber>;
+            unique_components: z.ZodOptional<z.ZodNumber>;
+        }, "strip", z.ZodTypeAny, {
+            total_blast_tests: number;
+            tests_from_changed_files: number;
+            tests_from_transitive: number;
+            high_risk_transitive?: number | undefined;
+            unique_components?: number | undefined;
+        }, {
+            total_blast_tests: number;
+            tests_from_changed_files: number;
+            tests_from_transitive: number;
+            high_risk_transitive?: number | undefined;
+            unique_components?: number | undefined;
+        }>>;
+        incident_context: z.ZodOptional<z.ZodObject<{
+            contract_version: z.ZodLiteral<"incident_context.v1">;
+            project_id: z.ZodNumber;
+            match_count: z.ZodNumber;
+            incident_match_score: z.ZodNumber;
+            match_tier: z.ZodEnum<["none", "low", "medium", "high"]>;
+            matches: z.ZodArray<z.ZodObject<{
+                match_id: z.ZodString;
+                match_type: z.ZodEnum<["prior_validation", "failure_pattern", "resolution", "test_history"]>;
+                title: z.ZodString;
+                description: z.ZodString;
+                match_score: z.ZodNumber;
+                match_tier: z.ZodEnum<["none", "low", "medium", "high"]>;
+                component: z.ZodOptional<z.ZodString>;
+                workflow_id: z.ZodOptional<z.ZodString>;
+                pr_number: z.ZodOptional<z.ZodNumber>;
+                risk_level: z.ZodOptional<z.ZodString>;
+                risk_score: z.ZodOptional<z.ZodNumber>;
+                pattern_label: z.ZodOptional<z.ZodString>;
+                pattern_occurrences: z.ZodOptional<z.ZodNumber>;
+                resolution_action: z.ZodOptional<z.ZodString>;
+                root_cause: z.ZodOptional<z.ZodString>;
+                success_rate: z.ZodOptional<z.ZodNumber>;
+                cases_count: z.ZodOptional<z.ZodNumber>;
+                avg_resolve_minutes: z.ZodOptional<z.ZodNumber>;
+                occurred_at: z.ZodOptional<z.ZodString>;
+                related_test_ids: z.ZodOptional<z.ZodArray<z.ZodNumber, "many">>;
+                overlapping_files: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+                resolved_by_name: z.ZodOptional<z.ZodString>;
+            }, "strip", z.ZodTypeAny, {
+                title: string;
+                match_id: string;
+                match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+                description: string;
+                match_score: number;
+                match_tier: "none" | "high" | "medium" | "low";
+                component?: string | undefined;
+                risk_level?: string | undefined;
+                workflow_id?: string | undefined;
+                pr_number?: number | undefined;
+                risk_score?: number | undefined;
+                pattern_label?: string | undefined;
+                pattern_occurrences?: number | undefined;
+                resolution_action?: string | undefined;
+                root_cause?: string | undefined;
+                success_rate?: number | undefined;
+                cases_count?: number | undefined;
+                avg_resolve_minutes?: number | undefined;
+                occurred_at?: string | undefined;
+                related_test_ids?: number[] | undefined;
+                overlapping_files?: string[] | undefined;
+                resolved_by_name?: string | undefined;
+            }, {
+                title: string;
+                match_id: string;
+                match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+                description: string;
+                match_score: number;
+                match_tier: "none" | "high" | "medium" | "low";
+                component?: string | undefined;
+                risk_level?: string | undefined;
+                workflow_id?: string | undefined;
+                pr_number?: number | undefined;
+                risk_score?: number | undefined;
+                pattern_label?: string | undefined;
+                pattern_occurrences?: number | undefined;
+                resolution_action?: string | undefined;
+                root_cause?: string | undefined;
+                success_rate?: number | undefined;
+                cases_count?: number | undefined;
+                avg_resolve_minutes?: number | undefined;
+                occurred_at?: string | undefined;
+                related_test_ids?: number[] | undefined;
+                overlapping_files?: string[] | undefined;
+                resolved_by_name?: string | undefined;
+            }>, "many">;
+            top_resolution: z.ZodOptional<z.ZodObject<{
+                action: z.ZodString;
+                root_cause: z.ZodOptional<z.ZodString>;
+                success_rate: z.ZodOptional<z.ZodNumber>;
+                cases_count: z.ZodNumber;
+                avg_resolve_minutes: z.ZodOptional<z.ZodNumber>;
+            }, "strip", z.ZodTypeAny, {
+                cases_count: number;
+                action: string;
+                root_cause?: string | undefined;
+                success_rate?: number | undefined;
+                avg_resolve_minutes?: number | undefined;
+            }, {
+                cases_count: number;
+                action: string;
+                root_cause?: string | undefined;
+                success_rate?: number | undefined;
+                avg_resolve_minutes?: number | undefined;
+            }>>;
+            insight: z.ZodString;
+        }, "strip", z.ZodTypeAny, {
+            match_tier: "none" | "high" | "medium" | "low";
+            contract_version: "incident_context.v1";
+            project_id: number;
+            match_count: number;
+            incident_match_score: number;
+            matches: {
+                title: string;
+                match_id: string;
+                match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+                description: string;
+                match_score: number;
+                match_tier: "none" | "high" | "medium" | "low";
+                component?: string | undefined;
+                risk_level?: string | undefined;
+                workflow_id?: string | undefined;
+                pr_number?: number | undefined;
+                risk_score?: number | undefined;
+                pattern_label?: string | undefined;
+                pattern_occurrences?: number | undefined;
+                resolution_action?: string | undefined;
+                root_cause?: string | undefined;
+                success_rate?: number | undefined;
+                cases_count?: number | undefined;
+                avg_resolve_minutes?: number | undefined;
+                occurred_at?: string | undefined;
+                related_test_ids?: number[] | undefined;
+                overlapping_files?: string[] | undefined;
+                resolved_by_name?: string | undefined;
+            }[];
+            insight: string;
+            top_resolution?: {
+                cases_count: number;
+                action: string;
+                root_cause?: string | undefined;
+                success_rate?: number | undefined;
+                avg_resolve_minutes?: number | undefined;
+            } | undefined;
+        }, {
+            match_tier: "none" | "high" | "medium" | "low";
+            contract_version: "incident_context.v1";
+            project_id: number;
+            match_count: number;
+            incident_match_score: number;
+            matches: {
+                title: string;
+                match_id: string;
+                match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+                description: string;
+                match_score: number;
+                match_tier: "none" | "high" | "medium" | "low";
+                component?: string | undefined;
+                risk_level?: string | undefined;
+                workflow_id?: string | undefined;
+                pr_number?: number | undefined;
+                risk_score?: number | undefined;
+                pattern_label?: string | undefined;
+                pattern_occurrences?: number | undefined;
+                resolution_action?: string | undefined;
+                root_cause?: string | undefined;
+                success_rate?: number | undefined;
+                cases_count?: number | undefined;
+                avg_resolve_minutes?: number | undefined;
+                occurred_at?: string | undefined;
+                related_test_ids?: number[] | undefined;
+                overlapping_files?: string[] | undefined;
+                resolved_by_name?: string | undefined;
+            }[];
+            insight: string;
+            top_resolution?: {
+                cases_count: number;
+                action: string;
+                root_cause?: string | undefined;
+                success_rate?: number | undefined;
+                avg_resolve_minutes?: number | undefined;
+            } | undefined;
+        }>>;
     }, "strip", z.ZodTypeAny, {
+        risk_level: "PASS" | "WARN" | "BLOCK";
+        risk_score: number;
         blocking_count: number;
         warning_count: number;
         passed_count: number;
         highest_severity: "high" | "medium" | "low" | "critical" | "info";
         merge_signal: "clean" | "review" | "block";
+        risk_factors: {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }[];
+        component_health?: {
+            component: string;
+            failure_rate_7d?: number | null | undefined;
+            failure_rate_30d?: number | null | undefined;
+            flakiness_score?: number | null | undefined;
+            total_tests?: number | null | undefined;
+            tests_with_risk_data?: number | null | undefined;
+            high_risk_tests?: number | null | undefined;
+            risk_level?: string | null | undefined;
+            trend?: string | null | undefined;
+        }[] | undefined;
+        dependency_blast?: {
+            changed_files: string[];
+            expanded_files: string[];
+            nodes: {
+                file_path: string;
+                depth: number;
+                imported_by: string;
+                chain: string[];
+                component_label?: string | undefined;
+            }[];
+            direct_dependents: number;
+            transitive_dependents: number;
+            total_expanded: number;
+            max_depth: number;
+            affected_components?: Record<string, number> | undefined;
+            has_structure?: boolean | undefined;
+        } | undefined;
+        blast_test_summary?: {
+            total_blast_tests: number;
+            tests_from_changed_files: number;
+            tests_from_transitive: number;
+            high_risk_transitive?: number | undefined;
+            unique_components?: number | undefined;
+        } | undefined;
+        incident_context?: {
+            match_tier: "none" | "high" | "medium" | "low";
+            contract_version: "incident_context.v1";
+            project_id: number;
+            match_count: number;
+            incident_match_score: number;
+            matches: {
+                title: string;
+                match_id: string;
+                match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+                description: string;
+                match_score: number;
+                match_tier: "none" | "high" | "medium" | "low";
+                component?: string | undefined;
+                risk_level?: string | undefined;
+                workflow_id?: string | undefined;
+                pr_number?: number | undefined;
+                risk_score?: number | undefined;
+                pattern_label?: string | undefined;
+                pattern_occurrences?: number | undefined;
+                resolution_action?: string | undefined;
+                root_cause?: string | undefined;
+                success_rate?: number | undefined;
+                cases_count?: number | undefined;
+                avg_resolve_minutes?: number | undefined;
+                occurred_at?: string | undefined;
+                related_test_ids?: number[] | undefined;
+                overlapping_files?: string[] | undefined;
+                resolved_by_name?: string | undefined;
+            }[];
+            insight: string;
+            top_resolution?: {
+                cases_count: number;
+                action: string;
+                root_cause?: string | undefined;
+                success_rate?: number | undefined;
+                avg_resolve_minutes?: number | undefined;
+            } | undefined;
+        } | undefined;
     }, {
+        risk_level: "PASS" | "WARN" | "BLOCK";
+        risk_score: number;
         blocking_count: number;
         warning_count: number;
         passed_count: number;
         highest_severity: "high" | "medium" | "low" | "critical" | "info";
         merge_signal: "clean" | "review" | "block";
+        risk_factors: {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }[];
+        component_health?: {
+            component: string;
+            failure_rate_7d?: number | null | undefined;
+            failure_rate_30d?: number | null | undefined;
+            flakiness_score?: number | null | undefined;
+            total_tests?: number | null | undefined;
+            tests_with_risk_data?: number | null | undefined;
+            high_risk_tests?: number | null | undefined;
+            risk_level?: string | null | undefined;
+            trend?: string | null | undefined;
+        }[] | undefined;
+        dependency_blast?: {
+            changed_files: string[];
+            expanded_files: string[];
+            nodes: {
+                file_path: string;
+                depth: number;
+                imported_by: string;
+                chain: string[];
+                component_label?: string | undefined;
+            }[];
+            direct_dependents: number;
+            transitive_dependents: number;
+            total_expanded: number;
+            max_depth: number;
+            affected_components?: Record<string, number> | undefined;
+            has_structure?: boolean | undefined;
+        } | undefined;
+        blast_test_summary?: {
+            total_blast_tests: number;
+            tests_from_changed_files: number;
+            tests_from_transitive: number;
+            high_risk_transitive?: number | undefined;
+            unique_components?: number | undefined;
+        } | undefined;
+        incident_context?: {
+            match_tier: "none" | "high" | "medium" | "low";
+            contract_version: "incident_context.v1";
+            project_id: number;
+            match_count: number;
+            incident_match_score: number;
+            matches: {
+                title: string;
+                match_id: string;
+                match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+                description: string;
+                match_score: number;
+                match_tier: "none" | "high" | "medium" | "low";
+                component?: string | undefined;
+                risk_level?: string | undefined;
+                workflow_id?: string | undefined;
+                pr_number?: number | undefined;
+                risk_score?: number | undefined;
+                pattern_label?: string | undefined;
+                pattern_occurrences?: number | undefined;
+                resolution_action?: string | undefined;
+                root_cause?: string | undefined;
+                success_rate?: number | undefined;
+                cases_count?: number | undefined;
+                avg_resolve_minutes?: number | undefined;
+                occurred_at?: string | undefined;
+                related_test_ids?: number[] | undefined;
+                overlapping_files?: string[] | undefined;
+                resolved_by_name?: string | undefined;
+            }[];
+            insight: string;
+            top_resolution?: {
+                cases_count: number;
+                action: string;
+                root_cause?: string | undefined;
+                success_rate?: number | undefined;
+                avg_resolve_minutes?: number | undefined;
+            } | undefined;
+        } | undefined;
     }>;
     claude_analysis: z.ZodOptional<z.ZodObject<{
         summary: z.ZodString;
@@ -1866,6 +2979,22 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
             severity: "high" | "medium" | "low" | "critical" | "info";
             path?: string | undefined;
         }>, "many">;
+        riskFactors: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            factor: z.ZodString;
+            score: z.ZodNumber;
+            weight: z.ZodNumber;
+            explanation: z.ZodString;
+        }, "strip", z.ZodTypeAny, {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }, {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }>, "many">>;
     }, "strip", z.ZodTypeAny, {
         confidence: number;
         suggestedFixes: {
@@ -1888,6 +3017,12 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
             severity: "high" | "medium" | "low" | "critical" | "info";
             path?: string | undefined;
         }[];
+        riskFactors?: {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }[] | undefined;
     }, {
         confidence: number;
         suggestedFixes: {
@@ -1910,6 +3045,12 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
             severity: "high" | "medium" | "low" | "critical" | "info";
             path?: string | undefined;
         }[];
+        riskFactors?: {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }[] | undefined;
     }>>;
     comment_draft: z.ZodOptional<z.ZodString>;
     metadata: z.ZodDefault<z.ZodObject<{
@@ -1935,9 +3076,9 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
     repository: {
         name: string;
         owner: string;
+        pr_number: number;
         base_sha: string;
         head_sha: string;
-        pr_number: number;
     };
     findings: {
         status: "passed" | "failed" | "warning";
@@ -1970,9 +3111,9 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
         lighthouseScore?: number | undefined;
         consoleErrors?: string[] | undefined;
     }[];
-    project_id: number;
-    contract_version: "pr_validation.v1";
     workflow_id: string;
+    contract_version: "pr_validation.v1";
+    project_id: number;
     impact_summary: {
         changed_files: number;
         impacted_flows: number;
@@ -2021,11 +3162,93 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
         } | undefined;
     };
     ai_ready_summary: {
+        risk_level: "PASS" | "WARN" | "BLOCK";
+        risk_score: number;
         blocking_count: number;
         warning_count: number;
         passed_count: number;
         highest_severity: "high" | "medium" | "low" | "critical" | "info";
         merge_signal: "clean" | "review" | "block";
+        risk_factors: {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }[];
+        component_health?: {
+            component: string;
+            failure_rate_7d?: number | null | undefined;
+            failure_rate_30d?: number | null | undefined;
+            flakiness_score?: number | null | undefined;
+            total_tests?: number | null | undefined;
+            tests_with_risk_data?: number | null | undefined;
+            high_risk_tests?: number | null | undefined;
+            risk_level?: string | null | undefined;
+            trend?: string | null | undefined;
+        }[] | undefined;
+        dependency_blast?: {
+            changed_files: string[];
+            expanded_files: string[];
+            nodes: {
+                file_path: string;
+                depth: number;
+                imported_by: string;
+                chain: string[];
+                component_label?: string | undefined;
+            }[];
+            direct_dependents: number;
+            transitive_dependents: number;
+            total_expanded: number;
+            max_depth: number;
+            affected_components?: Record<string, number> | undefined;
+            has_structure?: boolean | undefined;
+        } | undefined;
+        blast_test_summary?: {
+            total_blast_tests: number;
+            tests_from_changed_files: number;
+            tests_from_transitive: number;
+            high_risk_transitive?: number | undefined;
+            unique_components?: number | undefined;
+        } | undefined;
+        incident_context?: {
+            match_tier: "none" | "high" | "medium" | "low";
+            contract_version: "incident_context.v1";
+            project_id: number;
+            match_count: number;
+            incident_match_score: number;
+            matches: {
+                title: string;
+                match_id: string;
+                match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+                description: string;
+                match_score: number;
+                match_tier: "none" | "high" | "medium" | "low";
+                component?: string | undefined;
+                risk_level?: string | undefined;
+                workflow_id?: string | undefined;
+                pr_number?: number | undefined;
+                risk_score?: number | undefined;
+                pattern_label?: string | undefined;
+                pattern_occurrences?: number | undefined;
+                resolution_action?: string | undefined;
+                root_cause?: string | undefined;
+                success_rate?: number | undefined;
+                cases_count?: number | undefined;
+                avg_resolve_minutes?: number | undefined;
+                occurred_at?: string | undefined;
+                related_test_ids?: number[] | undefined;
+                overlapping_files?: string[] | undefined;
+                resolved_by_name?: string | undefined;
+            }[];
+            insight: string;
+            top_resolution?: {
+                cases_count: number;
+                action: string;
+                root_cause?: string | undefined;
+                success_rate?: number | undefined;
+                avg_resolve_minutes?: number | undefined;
+            } | undefined;
+        } | undefined;
     };
     claude_analysis?: {
         confidence: number;
@@ -2049,6 +3272,12 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
             severity: "high" | "medium" | "low" | "critical" | "info";
             path?: string | undefined;
         }[];
+        riskFactors?: {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }[] | undefined;
     } | undefined;
     comment_draft?: string | undefined;
 }, {
@@ -2056,9 +3285,9 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
     repository: {
         name: string;
         owner: string;
+        pr_number: number;
         base_sha: string;
         head_sha: string;
-        pr_number: number;
     };
     findings: {
         status: "passed" | "failed" | "warning";
@@ -2091,9 +3320,9 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
         lighthouseScore?: number | undefined;
         consoleErrors?: string[] | undefined;
     }[];
-    project_id: number;
-    contract_version: "pr_validation.v1";
     workflow_id: string;
+    contract_version: "pr_validation.v1";
+    project_id: number;
     impact_summary: {
         changed_files: number;
         impacted_flows: number;
@@ -2142,11 +3371,93 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
         } | undefined;
     };
     ai_ready_summary: {
+        risk_level: "PASS" | "WARN" | "BLOCK";
+        risk_score: number;
         blocking_count: number;
         warning_count: number;
         passed_count: number;
         highest_severity: "high" | "medium" | "low" | "critical" | "info";
         merge_signal: "clean" | "review" | "block";
+        risk_factors: {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }[];
+        component_health?: {
+            component: string;
+            failure_rate_7d?: number | null | undefined;
+            failure_rate_30d?: number | null | undefined;
+            flakiness_score?: number | null | undefined;
+            total_tests?: number | null | undefined;
+            tests_with_risk_data?: number | null | undefined;
+            high_risk_tests?: number | null | undefined;
+            risk_level?: string | null | undefined;
+            trend?: string | null | undefined;
+        }[] | undefined;
+        dependency_blast?: {
+            changed_files: string[];
+            expanded_files: string[];
+            nodes: {
+                file_path: string;
+                depth: number;
+                imported_by: string;
+                chain: string[];
+                component_label?: string | undefined;
+            }[];
+            direct_dependents: number;
+            transitive_dependents: number;
+            total_expanded: number;
+            max_depth: number;
+            affected_components?: Record<string, number> | undefined;
+            has_structure?: boolean | undefined;
+        } | undefined;
+        blast_test_summary?: {
+            total_blast_tests: number;
+            tests_from_changed_files: number;
+            tests_from_transitive: number;
+            high_risk_transitive?: number | undefined;
+            unique_components?: number | undefined;
+        } | undefined;
+        incident_context?: {
+            match_tier: "none" | "high" | "medium" | "low";
+            contract_version: "incident_context.v1";
+            project_id: number;
+            match_count: number;
+            incident_match_score: number;
+            matches: {
+                title: string;
+                match_id: string;
+                match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+                description: string;
+                match_score: number;
+                match_tier: "none" | "high" | "medium" | "low";
+                component?: string | undefined;
+                risk_level?: string | undefined;
+                workflow_id?: string | undefined;
+                pr_number?: number | undefined;
+                risk_score?: number | undefined;
+                pattern_label?: string | undefined;
+                pattern_occurrences?: number | undefined;
+                resolution_action?: string | undefined;
+                root_cause?: string | undefined;
+                success_rate?: number | undefined;
+                cases_count?: number | undefined;
+                avg_resolve_minutes?: number | undefined;
+                occurred_at?: string | undefined;
+                related_test_ids?: number[] | undefined;
+                overlapping_files?: string[] | undefined;
+                resolved_by_name?: string | undefined;
+            }[];
+            insight: string;
+            top_resolution?: {
+                cases_count: number;
+                action: string;
+                root_cause?: string | undefined;
+                success_rate?: number | undefined;
+                avg_resolve_minutes?: number | undefined;
+            } | undefined;
+        } | undefined;
     };
     metadata?: {
         execution_mode: "planned_only" | "executed";
@@ -2175,6 +3486,12 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
             severity: "high" | "medium" | "low" | "critical" | "info";
             path?: string | undefined;
         }[];
+        riskFactors?: {
+            factor: string;
+            score: number;
+            weight: number;
+            explanation: string;
+        }[] | undefined;
     } | undefined;
     comment_draft?: string | undefined;
 }>;

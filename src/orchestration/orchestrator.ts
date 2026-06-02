@@ -15,8 +15,10 @@ import {
   type VerificationFinding,
   type WorkflowContext,
   type WorkflowEvent,
+  type IncidentContext,
 } from "./contracts.js";
 import { type WorkflowStore } from "./store.js";
+import { computeRiskScore, severityFromRiskLevel, type RiskScoreResult } from "./riskScorer.js";
 
 const SEVERITY_ORDER: Record<Severity, number> = {
   critical: 5,
@@ -54,10 +56,20 @@ export interface TestExecutionAdapter {
   }): Promise<TestExecutionAdapterResult>;
 }
 
+export interface IncidentContextAdapter {
+  lookup(input: {
+    request: ValidatePrRequest;
+    context: WorkflowContext;
+    findings: VerificationFinding[];
+    affectedTests: AffectedTestCandidate[];
+  }): Promise<IncidentContext | undefined>;
+}
+
 export interface PrValidationOrchestratorDeps {
   store: WorkflowStore;
   impactAnalyzer: ImpactAnalysisAdapter;
   claudeAnalyzer?: ClaudeAnalysisAdapter;
+  incidentContextAdapter?: IncidentContextAdapter;
   testExecutor?: TestExecutionAdapter;
   enableTestExecution?: boolean;
   now?: () => Date;
@@ -79,6 +91,7 @@ export class PrValidationOrchestrator {
         replayed: true,
         executionMode: this.executionModeForContext(existing),
         impactSource: String(existing.metadata.impact_source ?? "none") as "git_refs" | "manual_diff" | "none",
+        incidentContext: (existing.metadata as Record<string, unknown>).incident_context as IncidentContext | undefined,
       });
     }
 
@@ -107,14 +120,47 @@ export class PrValidationOrchestrator {
       impacted_flows: context.changes.impactedFlows.length,
     });
 
+    // Compute risk score early so findings can reference it.
+    // Sprint 2: component history factor; Sprint 3: dependency blast factor.
+    let riskResult = computeRiskScore(
+      context.changes.changedFiles,
+      impact.affectedTests,
+      impact.componentHealth ?? [],
+      impact.dependencyBlast,
+    );
+    // Persist component health snapshot in context metadata for UI retrieval
+    if (impact.componentHealth?.length) {
+      (context.metadata as Record<string, unknown>).component_health = impact.componentHealth;
+    }
+    // Sprint 3: Persist dependency blast snapshot + blast test summary in metadata
+    if (impact.dependencyBlast?.has_structure) {
+      (context.metadata as Record<string, unknown>).dependency_blast = impact.dependencyBlast;
+    }
+    // Sprint 3 complete flow: blast→test bridge summary (gap metric)
+    const blastTestSummary = (impact as Record<string, unknown>).blastTestSummary as Record<string, number> | undefined;
+    if (blastTestSummary) {
+      (context.metadata as Record<string, unknown>).blast_test_summary = blastTestSummary;
+    }
+    // Sprint 3: count direct vs transitive tests for logging
+    const directTestCount = impact.affectedTests.filter((t) => !t.blast_source || t.blast_source === "direct" || t.blast_source === "changed_file").length;
+    const transitiveTestCount = impact.affectedTests.filter((t) => t.blast_source && t.blast_source !== "direct" && t.blast_source !== "changed_file").length;
+    if (transitiveTestCount > 0) {
+      (context.metadata as Record<string, unknown>).transitive_test_count = transitiveTestCount;
+      (context.metadata as Record<string, unknown>).direct_test_count = directTestCount;
+    }
+    context.metadata.risk_score = riskResult.risk_score;
+    context.metadata.risk_level = riskResult.risk_level;
+
     context.status = "aggregating";
     context.updatedAt = this.nowIso();
-    context.findings = this.normalizeFindings(impact.affectedTests, request);
+    context.findings = this.normalizeFindings(impact.affectedTests, request, riskResult);
     context.suggestedFixes = [...new Set(context.findings.flatMap((finding) => finding.suggestedFixes))];
     await this.deps.store.saveSnapshot(context);
     await this.appendEvent(context.id, "results.aggregated", {
       findings: context.findings.length,
       suggested_fixes: context.suggestedFixes.length,
+      risk_score: riskResult.risk_score,
+      risk_level: riskResult.risk_level,
     });
 
     if (
@@ -136,9 +182,7 @@ export class PrValidationOrchestrator {
       await this.appendEvent(
         context.id,
         "tests.execution_started",
-        {
-          impacted_tests: impact.affectedTests.length,
-        },
+        { impacted_tests: impact.affectedTests.length },
         "tests",
       );
 
@@ -191,22 +235,81 @@ export class PrValidationOrchestrator {
       await this.deps.store.saveSnapshot(context);
     }
 
+    // Engineering Memory — prior validations, failure patterns, resolutions
+    let incidentContext: IncidentContext | undefined;
+    if (this.deps.incidentContextAdapter) {
+      try {
+        incidentContext = await this.deps.incidentContextAdapter.lookup({
+          request,
+          context,
+          findings: context.findings,
+          affectedTests: impact.affectedTests,
+        });
+        if (incidentContext) {
+          (context.metadata as Record<string, unknown>).incident_context = incidentContext;
+
+          // ── Blend Engineering Memory into the risk score (15% weight) ───────
+          // Base score is deterministic (blast radius, historical rate, etc).
+          // Engineering Memory amplifies it when prior incidents signal the same risk.
+          const memScore = incidentContext.incident_match_score ?? 0;
+          if (memScore > 0) {
+            const baseScore = riskResult.risk_score;
+            const blendedScore = Math.round(Math.min(100, baseScore * 0.85 + memScore * 0.15));
+            const blendedLevel: "PASS" | "WARN" | "BLOCK" =
+              blendedScore >= 70 ? "BLOCK" : blendedScore >= 40 ? "WARN" : "PASS";
+            // Update riskResult in-place so buildResponse + comment draft use the final number
+            riskResult = {
+              ...riskResult,
+              risk_score: blendedScore,
+              risk_level: blendedLevel,
+              merge_signal: blendedLevel === "BLOCK" ? "block" : blendedLevel === "WARN" ? "review" : "clean",
+              merge_recommendation: blendedLevel === "BLOCK" ? "request_changes" : blendedLevel === "WARN" ? "hold" : "merge",
+              risk_factors: [
+                ...(riskResult.risk_factors ?? []),
+                {
+                  factor: "engineering_memory",
+                  score: memScore,
+                  weight: 0.15,
+                  explanation:
+                    `Engineering Memory matched ${incidentContext.match_count} historical signal(s) ` +
+                    `(${incidentContext.match_tier.toUpperCase()}, ${memScore}/100). ` +
+                    (incidentContext.top_resolution
+                      ? `Top fix: "${incidentContext.top_resolution.action.slice(0, 80)}".`
+                      : ""),
+                },
+              ],
+            };
+            context.metadata.risk_score = blendedScore;
+            context.metadata.risk_level = blendedLevel;
+          }
+
+          await this.appendEvent(context.id, "incident.context_resolved", {
+            match_count: incidentContext.match_count,
+            incident_match_score: incidentContext.incident_match_score,
+            match_tier: incidentContext.match_tier,
+          });
+          await this.deps.store.saveSnapshot(context);
+        }
+      } catch {
+        // Non-blocking — validation continues without memory enrichment
+      }
+    }
+
     context.status = "analyzing";
     context.updatedAt = this.nowIso();
     const claudeAnalysis =
-      (await this.deps.claudeAnalyzer?.analyze({
-        request,
-        context,
-        impact,
-      })) ?? this.buildDefaultClaudeAnalysis(context);
+      (await this.deps.claudeAnalyzer?.analyze({ request, context, impact })) ??
+      this.buildRiskDrivenAnalysis(context, riskResult);
     context.ai = claudeAnalysis;
     await this.deps.store.saveSnapshot(context);
     await this.appendEvent(context.id, "claude.analysis_completed", {
       merge_recommendation: claudeAnalysis.mergeRecommendation,
       confidence: claudeAnalysis.confidence,
+      risk_score: riskResult.risk_score,
+      risk_level: riskResult.risk_level,
     });
 
-    context.status = this.finalizeContextStatus(context);
+    context.status = this.finalizeContextStatus(context, executionMode);
     context.updatedAt = this.nowIso();
     context.metadata.execution_mode = executionMode;
     await this.deps.store.saveSnapshot(context);
@@ -216,6 +319,8 @@ export class PrValidationOrchestrator {
       replayed: false,
       executionMode,
       impactSource: impact.source,
+      riskResult,
+      incidentContext,
     });
   }
 
@@ -315,36 +420,84 @@ export class PrValidationOrchestrator {
     return { runs, unavailableRequestedStages };
   }
 
+  /**
+   * Converts impact analysis candidates into structured VerificationFindings.
+   * GAP 1 FIX: blocking is now driven by severity + historical risk signals.
+   * A finding is blocking when:
+   *   - severity is critical or high AND confidence ≥ 0.6, OR
+   *   - historical failure_rate_7d ≥ 0.4 (failed 40%+ of the time recently), OR
+   *   - risk_level is BLOCK (aggregate signal)
+   */
   private normalizeFindings(
     affectedTests: AffectedTestCandidate[],
     request: ValidatePrRequest,
+    riskResult: RiskScoreResult,
   ): VerificationFinding[] {
     const changedFileHints = (request.git.changed_files ?? []).map((file) => file.path);
+    const isBlockingRisk = riskResult.risk_level === "BLOCK";
+
     return affectedTests.map((candidate, index) => {
       const severity = this.normalizeSeverity(candidate.impact_level);
       const confidence = candidate.confidence ?? candidate.confidence_score ?? 0.5;
       const testName = candidate.test_name?.trim() || `Impacted Test ${index + 1}`;
       const flow = candidate.function_name?.trim() || testName;
+
+      // GAP 1: Determine blocking status — no longer hardcoded false
+      const isCriticalOrHigh = severity === "critical" || severity === "high";
+      const hasHighHistoricalFailure = (candidate.failure_rate_7d ?? 0) >= 0.4;
+      const blocking =
+        (isCriticalOrHigh && confidence >= 0.6) ||
+        hasHighHistoricalFailure ||
+        (isBlockingRisk && isCriticalOrHigh);
+
+      // Status: "failed" for blocking findings, "warning" for review-worthy, "passed" only after execution
+      const status: VerificationFinding["status"] = blocking ? "failed" : "warning";
+
+      // Build rich issue description including historical signals
+      const historyNote =
+        candidate.failure_rate_7d !== undefined
+          ? ` Historical failure rate: ${Math.round(candidate.failure_rate_7d * 100)}% (7d)${
+              candidate.flakiness_score !== undefined
+                ? `, flakiness: ${Math.round(candidate.flakiness_score * 100)}%`
+                : ""
+            }.`
+          : "";
+
+      const issue =
+        (candidate.reason?.trim() || "Code impact analysis identified this test as potentially affected.") +
+        historyNote;
+
+      const suggestedFixes: string[] = [
+        `Review ${testName} before merge.`,
+        "Run impacted validation stages to confirm runtime behavior.",
+      ];
+      if (hasHighHistoricalFailure) {
+        suggestedFixes.push(
+          `This test has a high historical failure rate (${Math.round((candidate.failure_rate_7d ?? 0) * 100)}%). Investigate root cause before merging.`
+        );
+      }
+      if (blocking) {
+        suggestedFixes.push("This finding is blocking. Resolve before merging.");
+      }
+
       return {
         id: `finding-${index + 1}`,
-        source: "test",
-        status: "warning",
+        source: "test" as const,
+        status,
         severity,
-        blocking: false,
+        blocking,
         flow,
-        title: `Review impacted coverage for ${testName}`,
-        issue: candidate.reason?.trim() || "Code impact analysis identified this test as potentially affected.",
-        rootCauseHint:
-          candidate.function_name?.trim()
-            ? `Recent changes touched ${candidate.function_name}.`
-            : "Review the changed logic and its linked coverage.",
+        title: blocking
+          ? `Blocking: ${testName} requires verification`
+          : `Review impacted coverage for ${testName}`,
+        issue,
+        rootCauseHint: candidate.function_name?.trim()
+          ? `Recent changes touched ${candidate.function_name}.`
+          : "Review the changed logic and its linked coverage.",
         changedFileHints,
         relatedTestIds: typeof candidate.test_id === "number" ? [candidate.test_id] : [],
         evidence: [],
-        suggestedFixes: [
-          `Review ${testName} before merge.`,
-          "Run impacted validation stages to confirm runtime behavior.",
-        ],
+        suggestedFixes,
         confidence,
       };
     });
@@ -352,63 +505,104 @@ export class PrValidationOrchestrator {
 
   private normalizeSeverity(level?: string): Severity {
     switch ((level || "").trim().toLowerCase()) {
-      case "critical":
-        return "critical";
-      case "high":
-        return "high";
-      case "medium":
-        return "medium";
-      case "low":
-        return "low";
-      default:
-        return "info";
+      case "critical": return "critical";
+      case "high":     return "high";
+      case "medium":   return "medium";
+      case "low":      return "low";
+      default:         return "info";
     }
   }
 
-  private buildDefaultClaudeAnalysis(context: WorkflowContext): ClaudeAnalysis {
-    const impactedTests = context.findings.length;
+  /**
+   * GAP 5: Risk-driven analysis replacing the hardcoded template strings.
+   * Uses the RiskScoreResult to produce deterministic, accurate merge recommendations.
+   */
+  private buildRiskDrivenAnalysis(context: WorkflowContext, riskResult: RiskScoreResult): ClaudeAnalysis {
     const testStageStatus = context.runs.tests?.status;
-    const queuedStages = Object.values(context.runs).filter((run) => run?.status === "queued").length;
-    const hasWorkRemaining = queuedStages > 0;
-    const summary =
-      testStageStatus === "passed"
-        ? `Executed impacted runtime validation for ${impactedTests} test${impactedTests === 1 ? "" : "s"} and all completed successfully.`
-        : testStageStatus === "failed"
-          ? "Executed impacted runtime validation and found failures that should block merge until reviewed."
-          : impactedTests > 0
-            ? `Impact analysis identified ${impactedTests} potentially affected test${impactedTests === 1 ? "" : "s"}. Validation stages are planned and should be run before merge.`
-            : "No impacted tests were identified from the provided change set.";
+    const hasExecutionResults = testStageStatus !== undefined;
+    const executionFailed = testStageStatus === "failed";
+    const executionPassed = testStageStatus === "passed";
+
+    // If we have real execution results, they override risk score for recommendation
+    let mergeRecommendation: ClaudeAnalysis["mergeRecommendation"];
+    let confidence: number;
+    let summary: string;
+
+    if (executionFailed) {
+      mergeRecommendation = "request_changes";
+      confidence = 0.92;
+      summary = `Executed impacted validation for ${context.findings.length} test(s). Failures detected. ` + riskResult.summary;
+    } else if (executionPassed) {
+      mergeRecommendation = riskResult.risk_level === "BLOCK" ? "merge_with_followup" : "merge";
+      confidence = 0.88;
+      summary = `All ${context.findings.length} impacted test(s) passed execution. Risk score: ${riskResult.risk_score}/100. ` + riskResult.summary;
+    } else {
+      // planned_only mode — use risk score
+      mergeRecommendation = riskResult.merge_recommendation;
+      confidence = riskResult.confidence;
+      summary = riskResult.summary;
+    }
+
+    const blockingFindings = context.findings.filter((f) => f.blocking);
+    const warningFindings = context.findings.filter((f) => !f.blocking && f.status === "warning");
 
     return {
       summary,
-      mergeRecommendation:
-        testStageStatus === "failed" ? "request_changes" : hasWorkRemaining ? "hold" : "merge",
-      confidence: testStageStatus === "failed" ? 0.82 : hasWorkRemaining ? 0.63 : 0.72,
+      mergeRecommendation,
+      confidence,
       rootCauses: context.findings.map((finding) => ({
         findingId: finding.id,
         probableCause: finding.rootCauseHint || finding.issue,
         relatedFiles: finding.changedFileHints,
-        rationale: `Generated from code impact analysis for ${finding.flow}.`,
+        rationale: `Risk-scored from code impact analysis for ${finding.flow}. Severity: ${finding.severity}.`,
         confidence: finding.confidence,
       })),
-      suggestedFixes: context.findings.map((finding) => ({
-        findingId: finding.id,
-        fix: finding.suggestedFixes[0] || "Run impacted validation and review linked files.",
-        files: finding.changedFileHints,
-        priority: "now",
-      })),
-      reviewComments: [],
+      suggestedFixes: [
+        ...blockingFindings.map((finding) => ({
+          findingId: finding.id,
+          fix: finding.suggestedFixes[0] || `Resolve blocking issue in ${finding.flow} before merge.`,
+          files: finding.changedFileHints,
+          priority: "now" as const,
+        })),
+        ...warningFindings.slice(0, 3).map((finding) => ({
+          findingId: finding.id,
+          fix: finding.suggestedFixes[0] || `Review ${finding.flow} coverage after merge.`,
+          files: finding.changedFileHints,
+          priority: "next" as const,
+        })),
+      ],
+      reviewComments: riskResult.risk_factors
+        .filter((f) => f.score > 40)
+        .map((f) => ({
+          body: `**Risk Factor — ${f.factor.replace(/_/g, " ")}** (score: ${f.score}/100): ${f.explanation}`,
+          severity: f.score >= 70 ? "high" as Severity : "medium" as Severity,
+        })),
     };
   }
 
-  private finalizeContextStatus(context: WorkflowContext): WorkflowContext["status"] {
+  /**
+   * GAP 7: Status is now correct for planned_only clean validations.
+   * planned_only with no blocking findings → "completed" (not "partial_failed")
+   */
+  private finalizeContextStatus(
+    context: WorkflowContext,
+    executionMode: "planned_only" | "executed",
+  ): WorkflowContext["status"] {
     const hasBlocking = context.findings.some((finding) => finding.blocking);
     if (hasBlocking) return "failed";
+
     const testStageStatus = context.runs.tests?.status;
     if (testStageStatus === "failed") return "failed";
     if (testStageStatus === "partial" || testStageStatus === "running") return "partial_failed";
+
+    // GAP 7: In planned_only mode, queued stages are expected — not a failure
+    if (executionMode === "planned_only") {
+      return "completed";
+    }
+
     const hasQueuedStages = Object.values(context.runs).some((run) => run?.status === "queued");
     if (hasQueuedStages) return "partial_failed";
+
     return "completed";
   }
 
@@ -419,14 +613,27 @@ export class PrValidationOrchestrator {
       replayed: boolean;
       executionMode: "planned_only" | "executed";
       impactSource: "git_refs" | "manual_diff" | "none";
+      riskResult?: RiskScoreResult;
+      incidentContext?: IncidentContext;
     },
   ): ValidatePrResponse {
     const highestSeverity = this.findHighestSeverity(context.findings);
     const warningCount = context.findings.filter((finding) => finding.status === "warning").length;
     const blockingCount = context.findings.filter((finding) => finding.blocking).length;
     const passedCount = context.findings.filter((finding) => finding.status === "passed").length;
+
     const status: ValidatePrResponse["status"] =
-      context.status === "completed" ? "passed" : context.status === "failed" ? "failed" : "partial";
+      context.status === "completed" ? "passed" :
+      context.status === "failed" ? "failed" :
+      "partial";
+
+    // GAP 2: merge_signal now incorporates severity and risk score, not just blocking count
+    const riskResult = opts.riskResult ?? this.recomputeRiskFromContext(context);
+    const merge_signal: ValidatePrResponse["ai_ready_summary"]["merge_signal"] =
+      blockingCount > 0 ? "block" :
+      riskResult.merge_signal === "block" ? "block" :
+      riskResult.merge_signal === "review" || warningCount > 0 ? "review" :
+      "clean";
 
     const response: ValidatePrResponse = {
       contract_version: "pr_validation.v1",
@@ -457,10 +664,23 @@ export class PrValidationOrchestrator {
         warning_count: warningCount,
         passed_count: passedCount,
         highest_severity: highestSeverity,
-        merge_signal: blockingCount > 0 ? "block" : warningCount > 0 ? "review" : "clean",
+        merge_signal,
+        risk_score: riskResult.risk_score,
+        risk_level: riskResult.risk_level,
+        risk_factors: riskResult.risk_factors,
+        // Sprint 2: include component health snapshot (from context metadata)
+        component_health: Array.isArray((context.metadata as Record<string, unknown>).component_health)
+          ? (context.metadata as Record<string, unknown>).component_health as import("./contracts.js").ComponentHealthEntry[]
+          : undefined,
+        // Sprint 3: include dependency blast snapshot (from context metadata)
+        dependency_blast: (context.metadata as Record<string, unknown>).dependency_blast as import("./contracts.js").DependencyBlast | undefined,
+        // Sprint 3 complete: blast→test bridge summary (gap metric for UI)
+        blast_test_summary: (context.metadata as Record<string, unknown>).blast_test_summary as { total_blast_tests: number; tests_from_changed_files: number; tests_from_transitive: number } | undefined,
+        incident_context: opts.incidentContext ??
+          ((context.metadata as Record<string, unknown>).incident_context as IncidentContext | undefined),
       },
       claude_analysis: context.ai,
-      comment_draft: includeCommentDraft ? this.buildCommentDraft(context, status) : undefined,
+      comment_draft: includeCommentDraft ? this.buildCommentDraft(context, status, riskResult) : undefined,
       metadata: {
         execution_mode: opts.executionMode,
         replayed: opts.replayed,
@@ -470,31 +690,217 @@ export class PrValidationOrchestrator {
     return ValidatePrResponseSchema.parse(response);
   }
 
-  private buildCommentDraft(context: WorkflowContext, status: ValidatePrResponse["status"]): string {
-    const recommendation = context.ai?.mergeRecommendation ?? "hold";
-    const topFindings = context.findings.slice(0, 5);
-    const lines = [
-      "## TestNeo PR Validation",
+  private recomputeRiskFromContext(context: WorkflowContext): RiskScoreResult {
+    const storedScore = typeof context.metadata.risk_score === "number" ? context.metadata.risk_score : undefined;
+    const storedLevel = context.metadata.risk_level as string | undefined;
+    if (storedScore !== undefined && storedLevel) {
+      const level = (storedLevel === "BLOCK" || storedLevel === "WARN" || storedLevel === "PASS")
+        ? storedLevel as "BLOCK" | "WARN" | "PASS"
+        : "WARN";
+      return {
+        risk_score: storedScore,
+        risk_level: level,
+        merge_signal: level === "BLOCK" ? "block" : level === "WARN" ? "review" : "clean",
+        merge_recommendation: level === "BLOCK" ? "request_changes" : level === "WARN" ? "hold" : "merge",
+        confidence: 0.7,
+        risk_factors: [],
+        summary: "",
+      };
+    }
+    return computeRiskScore(context.changes.changedFiles, []);
+  }
+
+  /**
+   * GAP 8: Structured comment draft matching the homepage board layout.
+   * Sections: Changed → Affected → Verification Selected → Result → Evidence → Recommendation
+   */
+  private buildCommentDraft(
+    context: WorkflowContext,
+    status: ValidatePrResponse["status"],
+    riskResult: RiskScoreResult,
+  ): string {
+    const recommendation = context.ai?.mergeRecommendation ?? riskResult.merge_recommendation;
+    const signal = riskResult.merge_signal.toUpperCase();
+    const signalEmoji = signal === "BLOCK" ? "🔴" : signal === "REVIEW" ? "🟡" : "🟢";
+    const prRef = `${context.repository.owner}/${context.repository.name} #${context.repository.prNumber}`;
+
+    const lines: string[] = [
+      `## ${signalEmoji} TestNeo PR Validation — ${signal}`,
+      `**${prRef}** · Risk Score: **${riskResult.risk_score}/100** · ${riskResult.risk_level}`,
       "",
-      `Status: **${status.toUpperCase()}**`,
-      `Merge recommendation: **${recommendation}**`,
-      "",
-      context.ai?.summary || "Validation planning completed.",
     ];
 
-    if (topFindings.length) {
-      lines.push("", "### Impacted coverage to review");
-      for (const finding of topFindings) {
-        lines.push(`- **${finding.flow}**: ${finding.issue}`);
+    // Changed
+    if (context.changes.changedFiles.length > 0) {
+      lines.push("### Changed");
+      for (const f of context.changes.changedFiles.slice(0, 8)) {
+        lines.push(`- \`${f.path}\` (${f.status}${f.additions ? ` +${f.additions}` : ""}${f.deletions ? ` -${f.deletions}` : ""})`);
       }
+      if (context.changes.changedFiles.length > 8) {
+        lines.push(`- _…and ${context.changes.changedFiles.length - 8} more_`);
+      }
+      lines.push("");
     }
 
-    if (context.suggestedFixes.length) {
-      lines.push("", "### Suggested next steps");
-      for (const fix of context.suggestedFixes.slice(0, 5)) {
+    // Affected
+    if (context.changes.impactedFlows.length > 0) {
+      lines.push("### Affected");
+      for (const flow of context.changes.impactedFlows.slice(0, 6)) {
+        lines.push(`- ✓ ${flow.name} _(confidence: ${Math.round(flow.confidence * 100)}%)_`);
+      }
+      lines.push("");
+    }
+
+    // Verification Selected
+    const blockingFindings = context.findings.filter((f) => f.blocking);
+    const warningFindings = context.findings.filter((f) => !f.blocking && f.status === "warning");
+    const passedFindings = context.findings.filter((f) => f.status === "passed");
+    const topFindings = [...blockingFindings, ...warningFindings, ...passedFindings].slice(0, 6);
+
+    if (topFindings.length > 0) {
+      lines.push("### Verification Selected");
+      for (const finding of topFindings) {
+        const icon = finding.status === "passed" ? "✅" : finding.blocking ? "🚫" : "⚠️";
+        lines.push(`- ${icon} ${finding.flow}`);
+      }
+      lines.push("");
+    }
+
+    // Result
+    lines.push("### Result");
+    lines.push(`**${signal}** — ${riskResult.risk_score}/100`);
+    lines.push("");
+    lines.push(context.ai?.summary || riskResult.summary);
+    lines.push("");
+
+    // Evidence
+    const testRun = context.runs.tests;
+    if (testRun) {
+      lines.push("### Evidence");
+      const passed = passedFindings.length;
+      const failed = blockingFindings.length;
+      const warned = warningFindings.length;
+      lines.push(`${passed} passed · ${failed} failed · ${warned} warnings`);
+      if (testRun.dashboardUrl) {
+        lines.push(`[View execution dashboard](${testRun.dashboardUrl})`);
+      }
+      lines.push("");
+    } else if (riskResult.risk_factors.length > 0) {
+      lines.push("### Evidence");
+      for (const factor of riskResult.risk_factors) {
+        const factorLabel = factor.factor.replace(/_/g, " ");
+        lines.push(`- **${factorLabel}**: ${factor.explanation} _(${factor.score}/100)_`);
+      }
+      lines.push("");
+    }
+
+    // Component Risk Context (Sprint 2) — only included when we have component data
+    const storedComponentHealth = Array.isArray(
+      (context.metadata as Record<string, unknown>).component_health
+    )
+      ? (context.metadata as Record<string, unknown>).component_health as Array<{
+          component: string;
+          failure_rate_7d?: number;
+          risk_level?: string;
+          trend?: string;
+        }>
+      : [];
+
+    if (storedComponentHealth.length > 0) {
+      lines.push("### Component Risk Context");
+      lines.push("| Component | 7d Failure Rate | Trend | Risk |");
+      lines.push("|-----------|----------------|-------|------|");
+      const TREND_ARROW: Record<string, string> = {
+        worsening: "↑ worse",
+        improving: "↓ better",
+        stable: "→ stable",
+        insufficient_data: "—",
+      };
+      const RISK_EMOJI: Record<string, string> = {
+        HIGH: "🔴 HIGH",
+        MEDIUM: "🟡 MEDIUM",
+        LOW: "🟢 LOW",
+        UNKNOWN: "⬜ UNKNOWN",
+      };
+      for (const c of storedComponentHealth.slice(0, 6)) {
+        const rate = c.failure_rate_7d != null ? `${Math.round(c.failure_rate_7d * 100)}%` : "—";
+        const trend = TREND_ARROW[c.trend ?? ""] ?? "—";
+        const risk = RISK_EMOJI[c.risk_level ?? ""] ?? "⬜";
+        lines.push(`| ${c.component} | ${rate} | ${trend} | ${risk} |`);
+      }
+      lines.push("");
+    }
+
+    // Dependency Blast Radius (Sprint 3) — only included when structure_json is available
+    const storedBlast = (context.metadata as Record<string, unknown>).dependency_blast as {
+      total_expanded?: number;
+      direct_dependents?: number;
+      transitive_dependents?: number;
+      max_depth?: number;
+      affected_components?: Record<string, number>;
+      has_structure?: boolean;
+      nodes?: Array<{ file_path: string; depth: number; imported_by: string; component_label?: string }>;
+    } | undefined;
+
+    if (storedBlast?.has_structure && (storedBlast.total_expanded ?? 0) > 0) {
+      lines.push("### Dependency Blast Radius");
+      lines.push(
+        `**${storedBlast.total_expanded} file(s)** transitively depend on the changed code ` +
+        `(${storedBlast.direct_dependents} direct · ${storedBlast.transitive_dependents} transitive · max depth ${storedBlast.max_depth}).`
+      );
+      const compEntries = Object.entries(storedBlast.affected_components ?? {});
+      if (compEntries.length > 0) {
+        lines.push(`Affected components: ${compEntries.map(([c, n]) => `**${c}** (${n})`).join(", ")}`);
+      }
+      if (storedBlast.nodes && storedBlast.nodes.length > 0) {
+        lines.push("");
+        lines.push("| File | Depth | Imported By | Component |");
+        lines.push("|------|-------|-------------|-----------|");
+        for (const node of storedBlast.nodes.slice(0, 8)) {
+          const file = node.file_path.split("/").pop() ?? node.file_path;
+          const importedBy = node.imported_by.split("/").pop() ?? node.imported_by;
+          lines.push(`| \`${file}\` | ${node.depth} | \`${importedBy}\` | ${node.component_label ?? "—"} |`);
+        }
+        if (storedBlast.nodes.length > 8) {
+          lines.push(`_…and ${storedBlast.nodes.length - 8} more files_`);
+        }
+      }
+      lines.push("");
+    }
+
+    // Recommendation
+    lines.push("### Recommendation");
+    const recLabel: Record<string, string> = {
+      merge: "Safe to merge",
+      merge_with_followup: "Merge with follow-up",
+      hold: "Hold — run validation stages before merging",
+      request_changes: "Request changes — blocking issues must be resolved",
+    };
+    lines.push(`**${recLabel[recommendation] ?? recommendation}**`);
+    lines.push("");
+
+    if (context.suggestedFixes.length > 0) {
+      for (const fix of context.suggestedFixes.slice(0, 4)) {
         lines.push(`- ${fix}`);
       }
+      lines.push("");
     }
+
+    // Risk factor breakdown (collapsible)
+    if (riskResult.risk_factors.some((f) => f.score > 20)) {
+      lines.push("<details>");
+      lines.push("<summary>Risk factor breakdown</summary>");
+      lines.push("");
+      for (const f of riskResult.risk_factors) {
+        const bar = "█".repeat(Math.round(f.score / 10)) + "░".repeat(10 - Math.round(f.score / 10));
+        lines.push(`**${f.factor.replace(/_/g, " ")}** \`${bar}\` ${f.score}/100 — ${f.explanation}`);
+      }
+      lines.push("");
+      lines.push("</details>");
+    }
+
+    lines.push("---");
+    lines.push("_Powered by [TestNeo](https://testneo.ai) · AI-Native Release Assurance_");
 
     return lines.join("\n");
   }

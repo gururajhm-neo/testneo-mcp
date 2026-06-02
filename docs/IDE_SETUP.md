@@ -31,7 +31,44 @@ npm run build
 node /absolute/path/to/this-repo/dist/index.js
 ```
 
-## Suggested prompts
+## Multi-IDE Configuration Files
+
+The following files are pre-configured in this repo for every major IDE:
+
+| IDE | Config file | Notes |
+|-----|-------------|-------|
+| **Cursor** | `.cursor/rules/testneo-pr-validation.mdc` | Auto-activates on PR validation intent |
+| **VS Code + Copilot** | `.github/copilot-instructions.md` + `.vscode/mcp.json` | MCP server + playbook |
+| **Windsurf / Claude Code / Codex CLI** | `AGENTS.md` (repo root) | Universal agent instructions |
+| **Cline / Continue.dev / Claude Desktop** | See `AGENTS.md` → IDE-Specific Configuration | Copy-paste JSON snippets |
+
+## PR Validation prompts (primary workflow)
+
+These work in every IDE once the MCP server is connected:
+
+- "Validate my PR before I merge" ← **starts the full Release Brief flow**
+- "Check what's risky in my current branch"
+- "What tests are affected by my changes?"
+- "Explain why finding-1 is blocking"
+- "Give me a fix plan for this PR"
+- "Is this safe to ship?"
+- "Show me the blast radius of this change"
+- "What's the risk score for my current diff?"
+
+### One-shot PR workflow (call this directly):
+```
+testneo_pr_validation_workflow — validate + explain + fix plan + Release Brief in one call
+```
+
+### Deep-dive follow-ups:
+```
+testneo_explain_failure workflow_id=<id>   — plain-English root cause per finding
+testneo_suggest_fix     workflow_id=<id>   — prioritised NOW/NEXT fix plan + rerun strategy
+testneo_get_pr_validation_detail workflow_id=<id>  — full validation board
+testneo_get_pr_validation_history project_id=<id>  — project-level risk history
+```
+
+## Other suggested prompts
 
 - "List my TestNeo projects."
 - "Show recent failed executions for project 47."

@@ -1,12 +1,135 @@
 # TestNeo MCP Tool Reference
 
-**Canonical document** (for **testneo.ai** / marketing / git): **`docs/mcp/mcp-tool-reference.md`** in the TestNeo API monorepo. The MCP server in **`packages/testneo-mcp-server`** exposes **47** tools, all prefixed with `testneo_`. The **`@testneo/mcp-server`** npm package ships the **same** Markdown as **`packages/testneo-mcp-server/docs/MCP_TOOL_REFERENCE.md`** — copy from this file before publish (see **Website and npm package sync** at the end of this page).
+**Canonical document** (for **testneo.ai** / marketing / git): **`docs/mcp/mcp-tool-reference.md`** in the TestNeo API monorepo. The MCP server in **`packages/testneo-mcp-server`** exposes **55** tools, all prefixed with `testneo_`. The **`@testneo/mcp-server`** npm package ships the **same** Markdown as **`packages/testneo-mcp-server/docs/MCP_TOOL_REFERENCE.md`** — copy from this file before publish (see **Website and npm package sync** at the end of this page).
 
 **Agent workflows:** `qa_intelligence_workflow`, `triage_failure_workflow`, and `rerun_decision_workflow` are **not** separate tool names. They are values of **`workflow_type`** on **`testneo_run_agent_workflow`** (see [Agent workflow tool](#agent-workflow-tool-testneo_run_agent_workflow)).
 
 ## Alphabetical index (all tools)
 
-`testneo_ai_assistant_query` · `testneo_api_project_openapi_impact` · `testneo_api_project_upload_openapi` · `testneo_apply_route_hardening` · `testneo_bootstrap_web_mcp_project` · `testneo_create_web_project` · `testneo_create_web_project_environment` · `testneo_delete_saved_api_test_chain` · `testneo_execute_generated_test_case` · `testneo_export_playwright_spec` · `testneo_figma_image_to_tests_workflow` · `testneo_figma_to_tests_workflow` · `testneo_find_test_cases` · `testneo_generate_tests_from_context` · `testneo_get_execution_logs` · `testneo_get_execution_status` · `testneo_get_execution_summary` · `testneo_get_failure_bundle` · `testneo_get_local_agent_status` · `testneo_get_pass_fail_trend` · `testneo_get_project_route_map` · `testneo_get_unified_context_by_name` · `testneo_ingest_figma_context` · `testneo_list_projects` · `testneo_list_recent_executions` · `testneo_list_saved_api_test_chains` · `testneo_list_tests_by_tags` · `testneo_list_unified_contexts` · `testneo_preview_generated_tests` · `testneo_rerun_failed` · `testneo_run_agent_workflow` · `testneo_run_api_test_chain` · `testneo_run_batch_by_tags` · `testneo_run_generated_test_pipeline` · `testneo_run_playwright_spec_preview` · `testneo_save_api_test_chain` · `testneo_search_failures` · `testneo_set_project_route_map` · `testneo_suggest_api_test_chains` · `testneo_swagger_impact_actions` · `testneo_swagger_impact_analysis` · `testneo_swagger_preview` · `testneo_swagger_upload_and_generate` · `testneo_trigger_playwright_execution` · `testneo_update_test_case_nlp` · `testneo_validate_connection` · `testneo_watch_execution`
+`testneo_ai_assistant_query` · `testneo_api_project_openapi_impact` · `testneo_api_project_upload_openapi` · `testneo_apply_route_hardening` · `testneo_bootstrap_web_mcp_project` · `testneo_create_web_project` · `testneo_create_web_project_environment` · `testneo_delete_saved_api_test_chain` · `testneo_execute_generated_test_case` · `testneo_explain_failure` · `testneo_export_playwright_spec` · `testneo_figma_image_to_tests_workflow` · `testneo_figma_to_tests_workflow` · `testneo_find_test_cases` · `testneo_generate_tests_from_context` · `testneo_get_execution_logs` · `testneo_get_execution_status` · `testneo_get_execution_summary` · `testneo_get_failure_bundle` · `testneo_get_incident_matches` · `testneo_get_local_agent_status` · `testneo_get_pass_fail_trend` · `testneo_get_pr_validation_detail` · `testneo_get_pr_validation_history` · `testneo_get_project_route_map` · `testneo_get_risk_signals` · `testneo_get_unified_context_by_name` · `testneo_ingest_figma_context` · `testneo_list_projects` · `testneo_list_recent_executions` · `testneo_list_saved_api_test_chains` · `testneo_list_tests_by_tags` · `testneo_list_unified_contexts` · `testneo_pr_validation_workflow` · `testneo_preview_generated_tests` · `testneo_rerun_failed` · `testneo_run_agent_workflow` · `testneo_run_api_test_chain` · `testneo_run_batch_by_tags` · `testneo_run_generated_test_pipeline` · `testneo_run_playwright_spec_preview` · `testneo_save_api_test_chain` · `testneo_search_failures` · `testneo_set_project_route_map` · `testneo_suggest_api_test_chains` · `testneo_suggest_fix` · `testneo_swagger_impact_actions` · `testneo_swagger_impact_analysis` · `testneo_swagger_preview` · `testneo_swagger_upload_and_generate` · `testneo_trigger_playwright_execution` · `testneo_update_test_case_nlp` · `testneo_validate_connection` · `testneo_validate_pr` · `testneo_watch_execution`
+
+## PR Validation & Release Confidence
+
+Seven tools that turn any MCP-compatible IDE into a full **release-confidence engine**: impact analysis → risk scoring → AI-quality root causes → prioritised fix plan — all in one chat thread. Works in Cursor, VS Code + Copilot, Windsurf, Claude Code, Cline, and any other MCP client. IDE playbook files are pre-configured in the TestNeo API repo (`.cursor/rules/`, `.github/copilot-instructions.md`, `AGENTS.md`, `.vscode/mcp.json`).
+
+### Risk levels
+
+| Level | Score | Signal | Meaning |
+|-------|-------|--------|---------|
+| 🟢 PASS | 0–34 | `clean` | Low verification risk; safe to merge after standard review |
+| 🟡 WARN | 35–69 | `review` | Run impacted validation stages before merging |
+| 🔴 BLOCK | 70–100 | `block` | Blocking findings; hold the release |
+
+### Risk score factors (weights sum to 1.0)
+
+| Factor | Weight | What it measures |
+|--------|--------|-----------------|
+| `blast_radius` | 0.25 | Affected test count × impact level × change density |
+| `historical_failure_rate` | 0.22 | Per-test 7d failure rates, flakiness scores, recent failures |
+| `critical_path_coverage` | 0.18 | Payment, auth, checkout, billing, pricing file patterns |
+| `component_history` | 0.13 | Project-wide component failure rates + trend (worsening/stable) |
+| `dependency_blast` | 0.12 | Transitive import depth + distinct components in blast radius |
+| `verification_coverage_gap` | 0.10 | % of impacted tests with linked TestNeo test case IDs |
+
+### PR Validation tools
+
+- **`testneo_pr_validation_workflow`** — **Primary entry point** (write-guarded for test execution; planning + risk scoring always run). One-shot Release Brief: runs impact analysis, risk scoring, `DataDrivenClaudeAnalyzer` (inline AI analysis — no external LLM), failure explanations, and prioritised fix plan in a single call. Returns a structured document with risk score, PASS/WARN/BLOCK signal, risk factor breakdown, component health snapshot, per-finding root causes, NOW/NEXT fix plan, and ready-to-paste PR comment draft. Set `confirm: true` + `TESTNEO_MCP_ALLOW_WRITE=true` to also execute impacted tests.
+
+- **`testneo_validate_pr`** — Raw `pr_validation.v1` contract. Runs `PrValidationOrchestrator` directly: impact analysis → risk scoring → AI analysis → optional test execution. Returns `workflow_id`, full findings array, `claude_analysis`, `comment_draft`, and `ai_ready_summary` with all risk factors. Use `testneo_pr_validation_workflow` for the full IDE experience; use this when you need the raw JSON contract.
+
+- **`testneo_explain_failure`** — Read-only. Deep-dive per-finding explanation for a `workflow_id`. Synthesises historical failure rates, component risk trends, transitive blast radius provenance, and changed-file context into plain-English root cause analysis and concrete "what to do next" steps with test IDs to rerun.
+
+- **`testneo_suggest_fix`** — Read-only. Prioritised two-tier fix plan from a `workflow_id`: **NOW** (blocking — must resolve before merge) and **NEXT** (warning — safe to defer). Includes file-level hints, test IDs to rerun, and a complete rerun strategy.
+
+- **`testneo_get_pr_validation_history`** — Read-only. Recent validation run history for a project: risk scores, merge signals, statuses, and PR refs. Foundation for Release Memory — answers "what was the risk last time we touched this file?"
+
+- **`testneo_get_pr_validation_detail`** — Read-only. Full stored `WorkflowContext` for a specific `workflow_id`: all findings, risk factors, blast radius snapshot, component health snapshot, and (optionally) the complete audit event trail. Mirrors the web PR Validation board at `/web/pr-validation/:workflowId`.
+
+- **`testneo_get_risk_signals`** — Read-only. Per-test flakiness scores and 7-day/30-day failure rates for specific test IDs. Call before `testneo_validate_pr` to understand which tests are historically risky. Inputs: `project_id` + `test_ids` array.
+
+- **`testneo_get_incident_matches`** — Read-only. **Engineering Memory** lookup without a full validation run. Connects prior `WorkflowContext` validations, `FailurePattern` clusters, and `TestFailureResolution` records to changed files, components, or test IDs. Returns incident match score (0–100), ranked matches, and top prior fix. Also included automatically in every `testneo_pr_validation_workflow` Release Brief.
+
+### One-shot IDE workflow
+
+```
+Developer: "validate my PR" (in Cursor, VS Code + Copilot, Windsurf, etc.)
+  ↓
+IDE AI detects git context:
+  git rev-parse HEAD                    → head_sha
+  git merge-base HEAD origin/main       → base_sha
+  git diff --name-status <base> HEAD    → changed_files
+  git remote get-url origin             → owner/name
+  ↓
+testneo_pr_validation_workflow(project_id, repository, pull_request, git, confirm: false)
+  ↓
+Release Brief displayed in chat:
+  🔴 BLOCK / 🟡 WARN / 🟢 PASS + risk score
+  Historical Incident Matches (Engineering Memory)
+  Risk factor breakdown
+  Component health snapshot
+  Per-finding root cause (AI-quality, data-driven)
+  NOW/NEXT fix plan
+  PR comment draft (ready to paste)
+  ↓
+If BLOCK:
+  testneo_explain_failure(workflow_id)   → deep root cause per finding
+  testneo_suggest_fix(workflow_id)       → prioritised fix plan + rerun strategy
+```
+
+### Example inputs
+
+**`testneo_pr_validation_workflow`**
+```json
+{
+  "project_id": 47,
+  "repository": { "owner": "acme", "name": "shop-web" },
+  "pull_request": { "number": 142 },
+  "git": {
+    "base_sha": "a1b2c3d",
+    "head_sha": "f4e5d6c",
+    "changed_files": [
+      { "path": "src/checkout/CheckoutService.ts", "status": "modified", "additions": 22, "deletions": 8 },
+      { "path": "src/auth/tokenRefresh.ts", "status": "modified", "additions": 45, "deletions": 12 }
+    ]
+  },
+  "execution": { "run_impacted_tests": true },
+  "confirm": false
+}
+```
+
+**`testneo_explain_failure`**
+```json
+{
+  "workflow_id": "e61bd584-f1b8-427b-abfd-1ab05c419667",
+  "include_rerun_plan": true
+}
+```
+
+**`testneo_suggest_fix`**
+```json
+{
+  "workflow_id": "e61bd584-f1b8-427b-abfd-1ab05c419667",
+  "priority_filter": "now"
+}
+```
+
+**`testneo_get_pr_validation_history`**
+```json
+{
+  "project_id": 47,
+  "limit": 10
+}
+```
+
+**`testneo_get_risk_signals`**
+```json
+{
+  "project_id": 47,
+  "test_ids": [7712, 7809, 7903]
+}
+```
+
+---
 
 ## Read/Analysis Tools
 - `testneo_validate_connection`
