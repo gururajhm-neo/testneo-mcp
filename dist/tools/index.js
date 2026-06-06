@@ -14,6 +14,10 @@ const executionContracts_js_1 = require("../executionContracts.js");
 const policyEngine_js_1 = require("../policyEngine.js");
 const idempotency_js_1 = require("../idempotency.js");
 const toolTelemetry_js_1 = require("../toolTelemetry.js");
+const engineeringMemoryCsv_js_1 = require("../engineeringMemoryCsv.js");
+const engineeringMemoryPostmortem_js_1 = require("../engineeringMemoryPostmortem.js");
+const engineeringMemoryConfluence_js_1 = require("../engineeringMemoryConfluence.js");
+const engineeringMemoryJira_js_1 = require("../engineeringMemoryJira.js");
 const executionUiLinks_js_1 = require("../executionUiLinks.js");
 const swaggerIntel_js_1 = require("../swaggerIntel.js");
 const routeHardeningToolSchema = zod_1.z
@@ -1950,34 +1954,33 @@ function registerTools(server, deps) {
         inputSchema: zod_1.z.object({
             project_id: zod_1.z.number().int().positive().describe("Project ID to analyse."),
             lookback_days: zod_1.z
-                .number()
-                .int()
-                .min(1)
-                .max(90)
-                .default(14)
-                .describe("Days to look back for PR validation runs (default 14)."),
-            since: zod_1.z
-                .string()
-                .optional()
-                .describe("ISO datetime — start of window (overrides lookback_days)."),
-            until: zod_1.z
-                .string()
-                .optional()
-                .describe("ISO datetime — end of window (default: now)."),
+                .number().int().min(1).max(90).default(14)
+                .describe("Days to look back for PR validation runs (default 14). Ignored if bundle_id provided."),
+            since: zod_1.z.string().optional().describe("ISO datetime — start of window (overrides lookback_days)."),
+            until: zod_1.z.string().optional().describe("ISO datetime — end of window (default: now)."),
+            bundle_id: zod_1.z.string().optional()
+                .describe("v1.1: Score a named Release Bundle instead of a time window. Pass bundle_id from testneo_create_release_bundle."),
         }),
-    }, async ({ project_id, lookback_days, since, until }) => {
+    }, async ({ project_id, lookback_days, since, until, bundle_id }) => {
         try {
-            const query = { project_id, lookback_days };
-            if (since)
-                query.since = since;
-            if (until)
-                query.until = until;
-            const resp = await client.request("/api/web/v1/release-readiness/summary", { query });
+            let resp;
+            if (bundle_id) {
+                resp = await client.request(`/api/web/v1/release-readiness/bundle/${bundle_id}`);
+            }
+            else {
+                const query = { project_id, lookback_days };
+                if (since)
+                    query.since = since;
+                if (until)
+                    query.until = until;
+                resp = await client.request("/api/web/v1/release-readiness/summary", { query });
+            }
             const confidence = resp?.release_confidence ?? 0;
             const rec = resp?.recommendation ?? "UNKNOWN";
             const recDetail = resp?.recommendation_detail ?? "";
             const summary = resp?.summary ?? {};
             const breakdown = Array.isArray(resp?.score_breakdown) ? resp.score_breakdown : [];
+            const unlockActions = Array.isArray(resp?.unlock_actions) ? resp.unlock_actions : [];
             const blockPrs = Array.isArray(resp?.block_prs) ? resp.block_prs : [];
             const warnPrs = Array.isArray(resp?.warn_prs) ? resp.warn_prs : [];
             const lines = [
@@ -2206,7 +2209,7 @@ function registerTools(server, deps) {
             project_id: zod_1.z.number().int().positive().describe("Project ID."),
             lookback_days: zod_1.z
                 .number().int().min(1).max(90).default(14)
-                .describe("Days to look back for PR validations (default 14)."),
+                .describe("Days to look back for PR validations (default 14). Ignored if bundle_id provided."),
             release_name: zod_1.z
                 .string().max(100).optional()
                 .describe("Release name/tag (e.g. 'v2.4.0' or 'Sprint 42'). Defaults to today's date."),
@@ -2215,8 +2218,10 @@ function registerTools(server, deps) {
                 .describe("Target deployment environment (default: 'production')."),
             since: zod_1.z.string().optional().describe("ISO datetime — start of window."),
             until: zod_1.z.string().optional().describe("ISO datetime — end of window."),
+            bundle_id: zod_1.z.string().optional()
+                .describe("v1.1: Generate brief for a named Release Bundle. Pass bundle_id from testneo_create_release_bundle."),
         }),
-    }, async ({ project_id, lookback_days, release_name, target_env, since, until }) => {
+    }, async ({ project_id, lookback_days, release_name, target_env, since, until, bundle_id }) => {
         try {
             const body = { project_id, lookback_days, target_env };
             if (release_name)
@@ -2225,6 +2230,8 @@ function registerTools(server, deps) {
                 body.since = since;
             if (until)
                 body.until = until;
+            if (bundle_id)
+                body.bundle_id = bundle_id;
             const resp = await client.request("/api/web/v1/release-readiness/brief", { method: "POST", body });
             const confidence = resp?.release_confidence ?? 0;
             const rec = resp?.recommendation ?? "UNKNOWN";
@@ -2296,6 +2303,347 @@ function registerTools(server, deps) {
             throw e;
         }
     });
+    // ── Release Intelligence v1.1 tools ─────────────────────────────────────
+    registerTracedTool("testneo_create_release_bundle", {
+        description: "Create a named Release Bundle — a labelled release candidate scored against exactly the PRs it contains. " +
+            "Use instead of time-window readiness when you want 'Release v2.4.0 = these 8 PR validations'. " +
+            "Returns release_confidence, unlock_actions (which BLOCK PRs to fix and estimated +confidence), " +
+            "go/no-go ready signal, and a shareable bundle_id for the web UI. " +
+            "Then call testneo_generate_release_brief with bundle_id for checklist + rollback. Read/write.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive().describe("Project ID."),
+            release_name: zod_1.z.string().max(100).describe("Release name, e.g. 'v2.4.0' or 'Sprint 42'."),
+            workflow_ids: zod_1.z.array(zod_1.z.string()).optional()
+                .describe("Explicit list of PR validation workflow IDs to include. If omitted, uses since/until window."),
+            target_env: zod_1.z.string().max(50).default("production").describe("Target deployment environment."),
+            since: zod_1.z.string().optional().describe("ISO datetime — start of window (if workflow_ids not provided)."),
+            until: zod_1.z.string().optional().describe("ISO datetime — end of window."),
+            gate_policy: zod_1.z.enum(["both", "no_block", "min_confidence", "warn_only"]).default("both")
+                .describe("Gate policy: 'both' = no BLOCKs AND confidence ≥ threshold (recommended)."),
+            gate_threshold: zod_1.z.number().int().min(50).max(100).default(85)
+                .describe("Minimum confidence required for gate pass (default 85)."),
+        }),
+    }, async ({ project_id, release_name, workflow_ids, target_env, since, until, gate_policy, gate_threshold }) => {
+        try {
+            const body = { project_id, release_name, target_env, gate_policy, gate_threshold };
+            if (workflow_ids?.length)
+                body.workflow_ids = workflow_ids;
+            if (since)
+                body.since = since;
+            if (until)
+                body.until = until;
+            const resp = await client.request("/api/web/v1/release-readiness/bundle", { method: "POST", body });
+            const confidence = resp?.release_confidence ?? 0;
+            const rec = resp?.recommendation ?? "NO DATA";
+            const bundleId = resp?.bundle_id ?? "";
+            const unlockActions = Array.isArray(resp?.unlock_actions) ? resp.unlock_actions : [];
+            const summary = resp?.summary ?? {};
+            const blockCount = summary.block_count ?? 0;
+            const warnCount = summary.warn_count ?? 0;
+            const confEmoji = confidence >= 85 ? "🟢" : confidence >= 70 ? "🟡" : confidence >= 50 ? "🟠" : "🔴";
+            const lines = [
+                `# 📦 Release Bundle — ${release_name}`,
+                `**Target:** ${target_env} · **Confidence:** ${confEmoji} ${confidence}/100 · ${rec}`,
+                `**Bundle ID:** \`${bundleId}\``,
+                `**Gate policy:** ${gate_policy} · threshold ${gate_threshold}`,
+                ``,
+                `## Summary`,
+                `- Total PRs: ${summary.total_prs ?? 0} (${blockCount} BLOCK, ${warnCount} WARN, ${summary.pass_count ?? 0} PASS)`,
+                `- Execution evidence: ${summary.exec_total_ran ?? 0} tests ran, ${summary.exec_pass_rate ?? "—"}% pass rate`,
+                `- Engineering Memory HIGH signals: ${summary.engineering_memory_high_signals ?? 0}`,
+            ];
+            if (unlockActions.length > 0) {
+                lines.push(``, `## 🔓 Unlock Ship — Fix These First`);
+                for (const a of unlockActions) {
+                    lines.push(`- **${a.pr_title ?? `PR #${a.pr_number}`}**: ${a.action} → **${a.confidence_gain}** confidence`);
+                }
+            }
+            lines.push(``, `## Next Steps`, `- Fix BLOCK PRs listed above, re-validate, then call \`testneo_create_release_bundle\` again`, `- Or: call \`testneo_generate_release_brief\` with \`bundle_id: "${bundleId}"\` for Go/No-Go + checklist + rollback`, `- Web UI: /web/release-readiness?bundle_id=${bundleId}`);
+            return result(lines.join("\n"));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_evaluate_release_gate", {
+        description: "Evaluate the CI/CD release gate for a Release Bundle. Returns GATE_PASS | GATE_BLOCK | GATE_WARN, " +
+            "reason, unlock actions, and incident density hints. GATE_PASS auto-stubs a release_outcomes row for learning. " +
+            "Use after testneo_create_release_bundle when confidence meets threshold.",
+        inputSchema: zod_1.z.object({
+            bundle_id: zod_1.z.string().min(1).describe("Bundle ID from testneo_create_release_bundle."),
+            policy: zod_1.z.enum(["both", "no_block", "min_confidence", "warn_only"]).default("both"),
+            min_confidence: zod_1.z.number().int().min(50).max(100).default(85),
+            override_reason: zod_1.z.string().optional()
+                .describe("Optional audit override — forces GATE_PASS with recorded reason."),
+        }),
+    }, async ({ bundle_id, policy, min_confidence, override_reason }) => {
+        try {
+            const resp = await client.request("/api/web/v1/release-readiness/gate", {
+                method: "POST",
+                body: { bundle_id, policy, min_confidence, override_reason: override_reason ?? undefined },
+            });
+            const status = resp?.gate_status ?? "UNKNOWN";
+            const lines = [
+                `# Release Gate — ${status}`,
+                ``,
+                `- **Reason:** ${resp?.reason ?? ""}`,
+                `- **Confidence:** ${resp?.release_confidence ?? "?"}/100`,
+                `- **BLOCK/WARN counts:** ${resp?.block_count ?? 0} / ${resp?.warn_count ?? 0}`,
+            ];
+            const actions = Array.isArray(resp?.actions) ? resp.actions : [];
+            if (actions.length > 0) {
+                lines.push("", "## Actions");
+                for (const a of actions)
+                    lines.push(`- ${a}`);
+            }
+            if (status === "GATE_PASS") {
+                lines.push("", "Outcome stub recorded — after deploy:", "  • testneo_get_release_webhook_config + testneo_test_release_webhook (Jira/PagerDuty demo signals)", "  • testneo_get_release_outcomes → testneo_record_release_outcome to finalize");
+            }
+            lines.push("", `Web UI: /web/release-readiness?bundle_id=${bundle_id}`);
+            return result(lines.join("\n"));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_record_release_outcome", {
+        description: "Mark a release deployed or record post-ship outcome (rollback, incidents, hotfixes). " +
+            "Without outcome_id: creates ship snapshot (POST). With outcome_id: updates post-ship signals (PATCH). " +
+            "Feeds testneo_get_release_calibration. Write — no confirm flag.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+            outcome_id: zod_1.z.string().optional()
+                .describe("When set, PATCH this outcome with post-ship fields below."),
+            bundle_id: zod_1.z.string().optional(),
+            release_name: zod_1.z.string().optional(),
+            confidence_at_ship: zod_1.z.number().int().min(0).max(100).optional(),
+            gate_status_at_ship: zod_1.z.string().optional(),
+            memory_high_signals: zod_1.z.number().int().min(0).optional(),
+            block_count: zod_1.z.number().int().min(0).optional(),
+            deploy_ref: zod_1.z.string().optional().describe("Git SHA, tag, or workflow run id."),
+            incident_within_7d: zod_1.z.boolean().optional(),
+            incident_within_30d: zod_1.z.boolean().optional(),
+            rollback: zod_1.z.boolean().optional(),
+            hotfix_pr_count: zod_1.z.number().int().min(0).optional(),
+            mttr_hours: zod_1.z.number().min(0).optional(),
+            outcome_notes: zod_1.z.string().optional(),
+        }),
+    }, async (params) => {
+        try {
+            if (params.outcome_id) {
+                const { outcome_id, project_id: _pid, ...fields } = params;
+                const body = {};
+                if (fields.incident_within_7d !== undefined)
+                    body.incident_within_7d = fields.incident_within_7d;
+                if (fields.incident_within_30d !== undefined)
+                    body.incident_within_30d = fields.incident_within_30d;
+                if (fields.rollback !== undefined)
+                    body.rollback = fields.rollback;
+                if (fields.hotfix_pr_count !== undefined)
+                    body.hotfix_pr_count = fields.hotfix_pr_count;
+                if (fields.mttr_hours !== undefined)
+                    body.mttr_hours = fields.mttr_hours;
+                if (fields.outcome_notes !== undefined)
+                    body.outcome_notes = fields.outcome_notes;
+                if (fields.deploy_ref !== undefined)
+                    body.deploy_ref = fields.deploy_ref;
+                const resp = await client.request(`/api/web/v1/release-readiness/outcome/${outcome_id}`, { method: "PATCH", body });
+                return result(asText(resp));
+            }
+            const resp = await client.request("/api/web/v1/release-readiness/outcome", {
+                method: "POST",
+                body: {
+                    project_id: params.project_id,
+                    bundle_id: params.bundle_id,
+                    release_name: params.release_name,
+                    confidence_at_ship: params.confidence_at_ship,
+                    gate_status_at_ship: params.gate_status_at_ship ?? "manual",
+                    memory_high_signals: params.memory_high_signals ?? 0,
+                    block_count: params.block_count ?? 0,
+                    deploy_ref: params.deploy_ref,
+                },
+            });
+            return result(asText(resp));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_get_release_outcomes", {
+        description: "List release outcome records for a project — ship snapshots and post-ship signals. Read-only.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+            limit: zod_1.z.number().int().min(1).max(200).default(50),
+        }),
+    }, async ({ project_id, limit }) => {
+        try {
+            const resp = await client.request(`/api/web/v1/release-readiness/outcomes?project_id=${project_id}&limit=${limit}`);
+            return result(asText(resp));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_get_release_calibration", {
+        description: "Read-only calibration suggestions from recorded release outcomes — e.g. " +
+            "'Ignored HIGH memory patterns → 3× rollback rate'. Never auto-changes gate policy.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+        }),
+    }, async ({ project_id }) => {
+        try {
+            const resp = await client.request(`/api/web/v1/release-readiness/calibration?project_id=${project_id}`);
+            const summary = resp?.summary ?? "";
+            const suggestions = Array.isArray(resp?.suggestions) ? resp.suggestions : [];
+            const lines = [
+                `# Release Outcome Calibration — project ${project_id}`,
+                ``,
+                summary,
+                ``,
+                `- Sample size: ${resp?.sample_size ?? 0}`,
+                `- Pending outcomes: ${resp?.pending_outcomes ?? 0}`,
+            ];
+            if (resp?.suggested_min_confidence != null) {
+                lines.push(`- Suggested min confidence: ${resp.suggested_min_confidence}`);
+            }
+            if (suggestions.length > 0) {
+                lines.push("", "## Suggestions");
+                for (const s of suggestions) {
+                    lines.push(`- [${s.severity}] ${s.message}`);
+                }
+            }
+            return result(lines.join("\n"));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_get_release_webhook_config", {
+        description: "Post-ship webhook setup for a project — Jira/PagerDuty URLs, match rules, open outcome stub readiness. " +
+            "Use before production wiring or to confirm an open stub exists for webhook pre-fill. Read-only.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+        }),
+    }, async ({ project_id }) => {
+        try {
+            const resp = await client.request(`/api/web/v1/release-readiness/webhook-config?project_id=${project_id}`);
+            const readiness = resp.readiness ?? {};
+            const jira = resp.jira ?? {};
+            const pd = resp.pagerduty ?? {};
+            const lines = [
+                `# Post-ship webhooks — project ${project_id}`,
+                "",
+                resp.value_copy?.headline ??
+                    "Connect production signals to your last ship.",
+                "",
+                `Open outcome stubs: ${readiness.open_outcome_count ?? 0} (${readiness.ready ? "ready" : "none — GATE_PASS or Mark deployed first"})`,
+            ];
+            const open = readiness.open_outcome;
+            if (open?.release_name || open?.bundle_id) {
+                lines.push(`Latest stub: ${open.release_name ?? open.bundle_id}`);
+            }
+            lines.push("", "## Jira post-release", `- URL (copy full URL in web UI — secret masked here): ${jira.url_display ?? jira.url ?? "—"}`, `- Labels: ${jira.match_rules?.labels_any?.join(", ") ?? "post-release"}`, "", "## PagerDuty", `- URL: ${pd.url ?? "—"}`, `- Signing secret configured: ${pd.signing_secret_configured ? "yes" : "no (optional for in-app test)"}`, "", "Test without ngrok: testneo_test_release_webhook with provider jira or pagerduty.", `Web UI: /web/release-readiness?project_id=${project_id}`);
+            return result(lines.join("\n"));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_test_release_webhook", {
+        description: "Send a realistic demo Jira post-release bug or PagerDuty incident.triggered through the same pipeline " +
+            "as production webhooks. Pre-fills the open release outcome stub (notes + incident flags). " +
+            "Requires an open outcome stub from GATE_PASS or Mark deployed. Write — no confirm flag.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+            provider: zod_1.z.enum(["jira", "pagerduty"]).describe("jira = post-release bug + EM ingest; pagerduty = incident page"),
+        }),
+    }, async ({ project_id, provider }) => {
+        try {
+            const resp = await client.request(`/api/web/v1/release-readiness/webhook-config/test/${provider}?project_id=${project_id}`, { method: "POST" });
+            const summary = resp.summary ?? {};
+            const lines = [
+                `# Post-ship webhook test (${provider}) — project ${project_id}`,
+                "",
+                `Status: ${summary.status ?? resp.handled ?? "unknown"}`,
+                summary.title ? `Title: ${summary.title}` : "",
+                summary.message ? `Message: ${summary.message}` : "",
+                summary.next_step ? `Next: ${summary.next_step}` : "",
+                "",
+                "Call testneo_get_release_outcomes then testneo_record_release_outcome to finalize calibration.",
+            ].filter(Boolean);
+            return result(lines.join("\n"));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_pre_validate_hint", {
+        description: "Engineering Memory pre-check — surface historical risk patterns for changed files BEFORE running full PR validation. " +
+            "Fast, read-only, no LLM. Returns warnings with pattern name, failure count, confidence, and suggested pre-checks. " +
+            "Use at the start of a coding session or before committing. " +
+            "If has_warnings=true, run testneo_pr_validation_workflow next for full risk score.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive().describe("Project ID."),
+            changed_files: zod_1.z.array(zod_1.z.string()).min(1).max(100)
+                .describe("List of file paths that have changed (e.g. from git diff --name-only)."),
+        }),
+    }, async ({ project_id, changed_files }) => {
+        try {
+            const resp = await client.request("/api/web/v1/release-readiness/memory-hint", { query: { project_id, files: changed_files.join(",") } });
+            const hasWarnings = resp?.has_warnings ?? false;
+            const warnings = Array.isArray(resp?.warnings) ? resp.warnings : [];
+            const prompt = resp?.prompt ?? null;
+            if (!hasWarnings || warnings.length === 0) {
+                return result(`✅ **Engineering Memory: No historical risk patterns** detected for the changed files.\n\n` +
+                    `${changed_files.length} file(s) checked. Proceed with \`testneo_pr_validation_workflow\` for full validation.`);
+            }
+            const lines = [
+                `⚠️ **Engineering Memory: ${warnings.length} historical risk area(s) detected**`,
+                ``,
+                `Changed files checked: ${resp?.changed_files_checked ?? changed_files.length}`,
+                ``,
+            ];
+            for (const w of warnings) {
+                lines.push(`### ${w.pattern}`, `- **Confidence:** ${w.confidence_pct} · **Failures:** ${w.failure_count} · **Resolved:** ${w.resolution_count ?? 0} times`, `- **Last seen:** ${w.last_seen_label ?? "unknown"}`);
+                if (w.description)
+                    lines.push(`- ${w.description}`);
+                const actions = Array.isArray(w.suggested_actions) ? w.suggested_actions : [];
+                if (actions.length > 0) {
+                    lines.push(`- **Pre-check:** ${actions[0]}`);
+                }
+                lines.push(``);
+            }
+            lines.push(`---`, `**Next:** Run \`testneo_pr_validation_workflow\` for full risk score, blast radius, and fix plan.`, prompt ? `\n${prompt}` : "");
+            return result(lines.join("\n"));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
     registerTracedTool("testneo_get_risk_signals", {
         description: "Returns historical failure rates, flakiness scores, and risk levels for specific test case IDs. " +
             "Use before running validate_pr to understand which tests are historically risky. " +
@@ -2358,6 +2706,309 @@ function registerTools(server, deps) {
                 timeoutMs: client.longRequestTimeoutMs,
             });
             return result(asText(resp));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_sync_engineering_memory", {
+        description: "Sync Jira bugs/incidents into Engineering Memory for a project. " +
+            "Requires Jira connected in TestNeo project settings. write: no confirm needed.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+            max_issues: zod_1.z.number().int().min(1).max(200).default(50),
+            lookback_days: zod_1.z.number().int().min(1).max(365).default(90),
+        }),
+    }, async ({ project_id, max_issues, lookback_days }) => {
+        try {
+            const resp = await client.request("/api/web/v1/engineering-memory/ingest/jira", {
+                method: "POST",
+                body: { project_id, max_issues, lookback_days },
+                timeoutMs: client.longRequestTimeoutMs,
+            });
+            return result(asText(resp));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_ingest_engineering_memory_csv", {
+        description: "Upload a bug-report CSV from the IDE workspace into Engineering Memory for a project. " +
+            "Use before testneo_pr_validation_workflow when the developer has a local bugs.csv — " +
+            "memory is matched to PR changed files automatically (no PR number on bugs). " +
+            "Provide csv_path (workspace-relative) OR csv_file_base64 + csv_filename. " +
+            "Backend: POST /api/web/v1/engineering-memory/ingest/csv. No confirm flag required.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+            csv_path: zod_1.z
+                .string()
+                .min(1)
+                .optional()
+                .describe("Workspace-relative path, e.g. scripts/fixtures/project10_engineering_memory_bugs.csv"),
+            csv_file_base64: zod_1.z.string().min(1).optional(),
+            csv_filename: zod_1.z.string().min(1).max(512).optional(),
+        }),
+    }, async ({ project_id, csv_path, csv_file_base64, csv_filename }) => {
+        try {
+            if (!csv_path && !csv_file_base64) {
+                return result(asText((0, engineeringMemoryCsv_js_1.wrapEngineeringMemoryCsv)({
+                    success: false,
+                    error: "Provide csv_path or csv_file_base64 (+ csv_filename).",
+                })));
+            }
+            if (csv_file_base64 && !csv_filename) {
+                return result(asText((0, engineeringMemoryCsv_js_1.wrapEngineeringMemoryCsv)({
+                    success: false,
+                    error: "csv_filename is required when using csv_file_base64.",
+                })));
+            }
+            const payload = csv_path
+                ? await (0, engineeringMemoryCsv_js_1.resolveBugCsvSource)({ kind: "path", csv_path })
+                : await (0, engineeringMemoryCsv_js_1.resolveBugCsvSource)({
+                    kind: "base64",
+                    csv_file_base64: csv_file_base64,
+                    csv_filename: csv_filename,
+                });
+            if (!payload.ok) {
+                return result(asText((0, engineeringMemoryCsv_js_1.wrapEngineeringMemoryCsv)({ success: false, error: payload.error })));
+            }
+            const ingest = await (0, engineeringMemoryCsv_js_1.ingestEngineeringMemoryCsv)(client, project_id, payload.blob, payload.filename);
+            const created = Number(ingest.created ?? 0);
+            const updated = Number(ingest.updated ?? 0);
+            const skipped = Number(ingest.skipped ?? 0);
+            return result(asText((0, engineeringMemoryCsv_js_1.wrapEngineeringMemoryCsv)({
+                success: true,
+                project_id,
+                filename: payload.filename,
+                csv_sha256: payload.sha256,
+                bytes: payload.buf.length,
+                created,
+                updated,
+                skipped,
+                message: created + updated > 0
+                    ? `Engineering Memory updated (${created} new, ${updated} updated). ` +
+                        "Run testneo_pr_validation_workflow on your PR — incident matches are live."
+                    : `No new rows (${skipped} unchanged). Run PR validation to see existing memory matches.`,
+                next_step: "testneo_pr_validation_workflow(project_id, repository, pull_request, git, confirm: false)",
+                ingest,
+            })));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_list_engineering_memory", {
+        description: "List Engineering Memory entries (bugs, Jira incidents, postmortems) for a project. Read-only.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+            source: zod_1.z.enum(["bug_csv", "jira", "postmortem_upload"]).optional(),
+            area: zod_1.z.string().optional(),
+            pattern_id: zod_1.z.number().int().positive().optional()
+                .describe("Filter entries linked to a unified failure pattern (from testneo_list_engineering_memory_patterns)."),
+            limit: zod_1.z.number().int().min(1).max(200).default(50),
+        }),
+    }, async ({ project_id, source, area, pattern_id, limit }) => {
+        try {
+            const q = new URLSearchParams({
+                project_id: String(project_id),
+                limit: String(limit),
+            });
+            if (source)
+                q.set("source", source);
+            if (area)
+                q.set("area", area);
+            if (pattern_id)
+                q.set("pattern_id", String(pattern_id));
+            const resp = await client.request(`/api/web/v1/engineering-memory/entries?${q.toString()}`);
+            return result(asText(resp));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_list_engineering_memory_patterns", {
+        description: "List unified failure patterns for a project (Phase 3 clustering). " +
+            "Returns pattern_label, source_mix narrative, trend (30d vs prior 30d), best_resolution, entry_count. " +
+            "Pass pattern_id for full detail including contributing entries. Read-only.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+            pattern_id: zod_1.z.number().int().positive().optional()
+                .describe("When set, returns full pattern detail + contributing memory entries."),
+            limit: zod_1.z.number().int().min(1).max(100).default(50),
+        }),
+    }, async ({ project_id, pattern_id, limit }) => {
+        try {
+            if (pattern_id) {
+                const resp = await client.request(`/api/web/v1/engineering-memory/patterns/${pattern_id}?project_id=${project_id}`);
+                const p = resp?.pattern ?? {};
+                const lines = [
+                    `# Pattern: ${p.pattern_label ?? pattern_id}`,
+                    ``,
+                    `- **ID:** ${p.id ?? pattern_id}`,
+                    `- **Trend:** ${p.trend ?? "stable"} — ${p.trend_narrative ?? ""}`,
+                    `- **Seen:** ${p.source_mix_narrative ?? p.failure_count ?? 0}`,
+                    `- **Confidence:** ${p.confidence ?? 0}%`,
+                    `- **Best fix:** ${p.best_resolution ?? "(none)"}`,
+                    ``,
+                    `**Web UI:** /web/engineering-memory?project_id=${project_id}&pattern_id=${pattern_id}&view=patterns`,
+                ];
+                const entries = Array.isArray(p.entries) ? p.entries : [];
+                if (entries.length > 0) {
+                    lines.push("", "## Contributing entries");
+                    for (const e of entries.slice(0, 15)) {
+                        lines.push(`- [${e.source}] ${e.title} (${e.id})`);
+                    }
+                }
+                return result(lines.join("\n"));
+            }
+            const resp = await client.request(`/api/web/v1/engineering-memory/patterns?project_id=${project_id}&limit=${limit}`);
+            const patterns = Array.isArray(resp?.patterns) ? resp.patterns : [];
+            if (patterns.length === 0) {
+                return result(`No unified patterns for project ${project_id}. Ingest bugs/postmortems then call testneo_refresh_engineering_memory_patterns.`);
+            }
+            const lines = [`# Unified failure patterns — project ${project_id}`, ``];
+            for (const p of patterns) {
+                lines.push(`## ${p.pattern_label ?? "Pattern"} (id=${p.id})`, `- ${p.source_mix_narrative ?? ""}`, `- Trend: **${p.trend ?? "stable"}** — ${p.trend_narrative ?? ""}`, `- Fix: ${p.best_resolution ?? "(none)"}`, `- Entries: ${p.entry_count ?? 0} · /web/engineering-memory?project_id=${project_id}&pattern_id=${p.id}&view=entries`, ``);
+            }
+            return result(lines.join("\n"));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_refresh_engineering_memory_patterns", {
+        description: "Re-cluster Engineering Memory entries into unified failure patterns and refresh source_mix + trend. " +
+            "Run after ingesting new bugs, Jira sync, or postmortems. Write — no confirm flag.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+        }),
+    }, async ({ project_id }) => {
+        try {
+            const resp = await client.request(`/api/web/v1/engineering-memory/patterns/refresh?project_id=${project_id}`, { method: "POST", timeoutMs: client.longRequestTimeoutMs });
+            return result(asText(resp));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_ingest_postmortem", {
+        description: "Ingest a postmortem / RCA into Engineering Memory for a project. " +
+            "Provide title + body (paste) OR md_path (workspace-relative .md file). " +
+            "Extracts impact areas, root cause, resolution actions, and related file paths for PR matching. " +
+            "Backend: POST /api/web/v1/engineering-memory/ingest/postmortem. No confirm flag required.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+            title: zod_1.z.string().min(1).max(512).optional(),
+            body: zod_1.z.string().min(10).optional(),
+            md_path: zod_1.z
+                .string()
+                .min(1)
+                .optional()
+                .describe("Workspace-relative path, e.g. docs/demo/postmortem-orders-sev1.md"),
+            external_id: zod_1.z
+                .string()
+                .min(1)
+                .max(128)
+                .optional()
+                .describe("Stable id for upsert (e.g. pm-project10-fulfillment-0042)"),
+        }),
+    }, async ({ project_id, title, body, md_path, external_id }) => {
+        try {
+            let pmTitle = title?.trim();
+            let pmBody = body?.trim();
+            let filename;
+            if (md_path) {
+                const payload = await (0, engineeringMemoryPostmortem_js_1.readPostmortemFromPath)(md_path);
+                if (!payload.ok) {
+                    return result(asText((0, engineeringMemoryPostmortem_js_1.wrapEngineeringMemoryPostmortem)({ success: false, error: payload.error })));
+                }
+                pmTitle = pmTitle || payload.title;
+                pmBody = pmBody || payload.body;
+                filename = payload.filename;
+            }
+            if (!pmTitle || !pmBody) {
+                return result(asText((0, engineeringMemoryPostmortem_js_1.wrapEngineeringMemoryPostmortem)({
+                    success: false,
+                    error: "Provide body (+ title) or md_path.",
+                })));
+            }
+            const ingest = await (0, engineeringMemoryPostmortem_js_1.ingestPostmortem)(client, project_id, pmTitle, pmBody, external_id);
+            const created = Number(ingest.created ?? 0);
+            const updated = Number(ingest.updated ?? 0);
+            const warnings = ingest.duplicate_warnings || [];
+            return result(asText((0, engineeringMemoryPostmortem_js_1.wrapEngineeringMemoryPostmortem)({
+                success: true,
+                project_id,
+                filename,
+                title: pmTitle,
+                created,
+                updated,
+                entry_ids: ingest.entry_ids,
+                duplicate_warnings: warnings,
+                message: created + updated > 0
+                    ? `Postmortem ingested (${created} new, ${updated} updated). Run PR validation to see matches.`
+                    : "No changes (duplicate or unchanged body).",
+                next_step: "testneo_pr_validation_workflow(project_id, repository, pull_request, git, confirm: false)",
+            })));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_ingest_confluence", {
+        description: "Import a Confluence postmortem page into Engineering Memory. " +
+            "Uses the same Atlassian credentials as Jira Integration for the project. " +
+            "Provide page_id (numeric) or full Confluence page URL. " +
+            "Backend: POST /api/web/v1/engineering-memory/ingest/confluence. No confirm flag required.",
+        inputSchema: zod_1.z.object({
+            project_id: zod_1.z.number().int().positive(),
+            page_id: zod_1.z
+                .string()
+                .min(1)
+                .describe("Confluence page id or full URL, e.g. https://…atlassian.net/wiki/spaces/TEAM/pages/123456789/…"),
+            title: zod_1.z.string().min(1).max(512).optional().describe("Optional title override"),
+        }),
+    }, async ({ project_id, page_id, title }) => {
+        try {
+            const ingest = await (0, engineeringMemoryConfluence_js_1.ingestConfluencePage)(client, project_id, page_id.trim(), title?.trim());
+            const created = Number(ingest.created ?? 0);
+            const updated = Number(ingest.updated ?? 0);
+            const warnings = ingest.duplicate_warnings || [];
+            return result(asText((0, engineeringMemoryConfluence_js_1.wrapEngineeringMemoryConfluence)({
+                success: true,
+                project_id,
+                confluence_page_id: ingest.confluence_page_id,
+                external_url: ingest.external_url,
+                created,
+                updated,
+                entry_ids: ingest.entry_ids,
+                duplicate_warnings: warnings,
+                message: created + updated > 0
+                    ? `Confluence page ingested (${created} new, ${updated} updated). Run PR validation to see matches.`
+                    : "No changes (duplicate or unchanged body).",
+                next_step: "testneo_refresh_engineering_memory_patterns(project_id)",
+            })));
         }
         catch (e) {
             const fmt = formatApiFailure(e);
@@ -2768,10 +3419,88 @@ function registerTools(server, deps) {
                 .boolean()
                 .default(false)
                 .describe("Set true + TESTNEO_MCP_ALLOW_WRITE=true to execute impacted tests."),
+            engineering_memory_csv_path: zod_1.z
+                .string()
+                .min(1)
+                .optional()
+                .describe("Optional: ingest this bug CSV into Engineering Memory before validation " +
+                "(workspace-relative path, e.g. bugs/orders_incidents.csv)."),
+            engineering_memory_csv_base64: zod_1.z.string().min(1).optional(),
+            engineering_memory_csv_filename: zod_1.z.string().min(1).max(512).optional(),
+            sync_jira_before_validate: zod_1.z
+                .boolean()
+                .default(true)
+                .describe("When true (default), sync Jira bugs/incidents into Engineering Memory before validation. " +
+                "Requires Jira connected on the project; skipped silently if not."),
+            jira_sync_max_issues: zod_1.z.number().int().min(1).max(200).default(50).optional(),
+            jira_sync_lookback_days: zod_1.z.number().int().min(1).max(365).default(90).optional(),
             idempotency_key: zod_1.z.string().min(8).max(128).optional(),
         }),
     }, async (params) => {
         try {
+            // ── Step 0a (default): Sync Jira → Engineering Memory ───────────────
+            let jiraSyncSummary;
+            if (params.sync_jira_before_validate !== false) {
+                try {
+                    const jiraIngest = await (0, engineeringMemoryJira_js_1.syncJiraEngineeringMemory)(client, params.project_id, {
+                        max_issues: params.jira_sync_max_issues ?? 50,
+                        lookback_days: params.jira_sync_lookback_days ?? 90,
+                    });
+                    jiraSyncSummary = (0, engineeringMemoryJira_js_1.wrapEngineeringMemoryJira)({
+                        success: true,
+                        synced: true,
+                        created: jiraIngest.created ?? 0,
+                        updated: jiraIngest.updated ?? 0,
+                        skipped_rows: jiraIngest.skipped ?? 0,
+                    });
+                }
+                catch (jiraErr) {
+                    const msg = jiraErr instanceof Error ? jiraErr.message : String(jiraErr);
+                    jiraSyncSummary = (0, engineeringMemoryJira_js_1.wrapEngineeringMemoryJira)({
+                        success: true,
+                        synced: false,
+                        skipped: true,
+                        skip_reason: msg.slice(0, 200),
+                    });
+                }
+            }
+            // ── Step 0b (optional): Ingest bug CSV into Engineering Memory ───────
+            let memoryIngestSummary;
+            const memPath = params.engineering_memory_csv_path?.trim();
+            const memB64 = params.engineering_memory_csv_base64?.trim();
+            const memFn = params.engineering_memory_csv_filename?.trim();
+            if (memPath || memB64) {
+                if (memB64 && !memFn) {
+                    return result(asText({
+                        contract_version: "pr_validation_workflow.v1",
+                        success: false,
+                        error: "engineering_memory_csv_filename is required when using engineering_memory_csv_base64.",
+                    }));
+                }
+                const csvPayload = memPath
+                    ? await (0, engineeringMemoryCsv_js_1.resolveBugCsvSource)({ kind: "path", csv_path: memPath })
+                    : await (0, engineeringMemoryCsv_js_1.resolveBugCsvSource)({
+                        kind: "base64",
+                        csv_file_base64: memB64,
+                        csv_filename: memFn,
+                    });
+                if (!csvPayload.ok) {
+                    return result(asText({
+                        contract_version: "pr_validation_workflow.v1",
+                        success: false,
+                        error: `Engineering Memory CSV ingest failed: ${csvPayload.error}`,
+                    }));
+                }
+                const ingest = await (0, engineeringMemoryCsv_js_1.ingestEngineeringMemoryCsv)(client, params.project_id, csvPayload.blob, csvPayload.filename);
+                memoryIngestSummary = (0, engineeringMemoryCsv_js_1.wrapEngineeringMemoryCsv)({
+                    success: true,
+                    filename: csvPayload.filename,
+                    csv_sha256: csvPayload.sha256,
+                    created: ingest.created ?? 0,
+                    updated: ingest.updated ?? 0,
+                    skipped: ingest.skipped ?? 0,
+                });
+            }
             // ── Step 1: Run full orchestration with DataDrivenClaudeAnalyzer ────
             const orchestrator = new index_js_1.PrValidationOrchestrator({
                 store: workflowStore,
@@ -2818,6 +3547,29 @@ function registerTools(server, deps) {
             lines.push(`# ${headerEmoji} TestNeo Release Brief — ${riskLevel} (${riskScore}/100)`);
             lines.push(`**${prRef}** · workflow \`${workflow_id}\``);
             lines.push("");
+            if (jiraSyncSummary?.synced) {
+                const created = jiraSyncSummary.created ?? 0;
+                const updated = jiraSyncSummary.updated ?? 0;
+                lines.push("## 📥 Engineering Memory (Jira synced before validation)");
+                lines.push(`Pulled latest Jira bugs/incidents — ${created} new, ${updated} updated. ` +
+                    "Matches below use fresh memory against your changed files.");
+                lines.push("");
+            }
+            else if (jiraSyncSummary && params.sync_jira_before_validate !== false) {
+                lines.push("## 📥 Engineering Memory (Jira sync skipped)");
+                lines.push(`No Jira sync (${String(jiraSyncSummary.skip_reason || "not connected")}). ` +
+                    "Existing memory entries still used for matching.");
+                lines.push("");
+            }
+            if (memoryIngestSummary) {
+                const created = memoryIngestSummary.created ?? 0;
+                const updated = memoryIngestSummary.updated ?? 0;
+                lines.push("## 📥 Engineering Memory (CSV ingested before validation)");
+                lines.push(`Loaded **${String(memoryIngestSummary.filename)}** — ` +
+                    `${created} new, ${updated} updated incident(s). ` +
+                    "Matches below use this fresh memory against your changed files.");
+                lines.push("");
+            }
             // AI Summary
             if (claude_analysis?.summary) {
                 lines.push(claude_analysis.summary);

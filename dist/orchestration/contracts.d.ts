@@ -65,9 +65,9 @@ export declare const ExecutionArtifactRefSchema: z.ZodObject<{
     metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
 }, "strip", z.ZodTypeAny, {
     url: string;
+    kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
     id: string;
     name: string;
-    kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
     contentType?: string | undefined;
     flow?: string | undefined;
     testId?: number | undefined;
@@ -75,9 +75,9 @@ export declare const ExecutionArtifactRefSchema: z.ZodObject<{
     metadata?: Record<string, unknown> | undefined;
 }, {
     url: string;
+    kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
     id: string;
     name: string;
-    kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
     contentType?: string | undefined;
     flow?: string | undefined;
     testId?: number | undefined;
@@ -138,9 +138,9 @@ export declare const VerificationFindingSchema: z.ZodObject<{
         metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     }, "strip", z.ZodTypeAny, {
         url: string;
+        kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
         id: string;
         name: string;
-        kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
         contentType?: string | undefined;
         flow?: string | undefined;
         testId?: number | undefined;
@@ -148,9 +148,9 @@ export declare const VerificationFindingSchema: z.ZodObject<{
         metadata?: Record<string, unknown> | undefined;
     }, {
         url: string;
+        kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
         id: string;
         name: string;
-        kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
         contentType?: string | undefined;
         flow?: string | undefined;
         testId?: number | undefined;
@@ -166,6 +166,7 @@ export declare const VerificationFindingSchema: z.ZodObject<{
     confidence: z.ZodNumber;
 }, "strip", z.ZodTypeAny, {
     status: "passed" | "failed" | "warning";
+    title: string;
     id: string;
     confidence: number;
     relatedTestIds: number[];
@@ -173,14 +174,13 @@ export declare const VerificationFindingSchema: z.ZodObject<{
     source: "replay" | "visual" | "lighthouse" | "console" | "test";
     severity: "high" | "medium" | "low" | "critical" | "info";
     blocking: boolean;
-    title: string;
     issue: string;
     changedFileHints: string[];
     evidence: {
         url: string;
+        kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
         id: string;
         name: string;
-        kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
         contentType?: string | undefined;
         flow?: string | undefined;
         testId?: number | undefined;
@@ -196,6 +196,7 @@ export declare const VerificationFindingSchema: z.ZodObject<{
     consoleErrors?: string[] | undefined;
 }, {
     status: "passed" | "failed" | "warning";
+    title: string;
     id: string;
     confidence: number;
     relatedTestIds: number[];
@@ -203,14 +204,13 @@ export declare const VerificationFindingSchema: z.ZodObject<{
     source: "replay" | "visual" | "lighthouse" | "console" | "test";
     severity: "high" | "medium" | "low" | "critical" | "info";
     blocking: boolean;
-    title: string;
     issue: string;
     changedFileHints: string[];
     evidence: {
         url: string;
+        kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
         id: string;
         name: string;
-        kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
         contentType?: string | undefined;
         flow?: string | undefined;
         testId?: number | undefined;
@@ -675,9 +675,9 @@ export declare const WorkflowContextSchema: z.ZodObject<{
         metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     }, "strip", z.ZodTypeAny, {
         url: string;
+        kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
         id: string;
         name: string;
-        kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
         contentType?: string | undefined;
         flow?: string | undefined;
         testId?: number | undefined;
@@ -685,9 +685,9 @@ export declare const WorkflowContextSchema: z.ZodObject<{
         metadata?: Record<string, unknown> | undefined;
     }, {
         url: string;
+        kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
         id: string;
         name: string;
-        kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
         contentType?: string | undefined;
         flow?: string | undefined;
         testId?: number | undefined;
@@ -718,9 +718,9 @@ export declare const WorkflowContextSchema: z.ZodObject<{
             metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
         }, "strip", z.ZodTypeAny, {
             url: string;
+            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             id: string;
             name: string;
-            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             contentType?: string | undefined;
             flow?: string | undefined;
             testId?: number | undefined;
@@ -728,9 +728,9 @@ export declare const WorkflowContextSchema: z.ZodObject<{
             metadata?: Record<string, unknown> | undefined;
         }, {
             url: string;
+            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             id: string;
             name: string;
-            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             contentType?: string | undefined;
             flow?: string | undefined;
             testId?: number | undefined;
@@ -746,6 +746,7 @@ export declare const WorkflowContextSchema: z.ZodObject<{
         confidence: z.ZodNumber;
     }, "strip", z.ZodTypeAny, {
         status: "passed" | "failed" | "warning";
+        title: string;
         id: string;
         confidence: number;
         relatedTestIds: number[];
@@ -753,14 +754,13 @@ export declare const WorkflowContextSchema: z.ZodObject<{
         source: "replay" | "visual" | "lighthouse" | "console" | "test";
         severity: "high" | "medium" | "low" | "critical" | "info";
         blocking: boolean;
-        title: string;
         issue: string;
         changedFileHints: string[];
         evidence: {
             url: string;
+            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             id: string;
             name: string;
-            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             contentType?: string | undefined;
             flow?: string | undefined;
             testId?: number | undefined;
@@ -776,6 +776,7 @@ export declare const WorkflowContextSchema: z.ZodObject<{
         consoleErrors?: string[] | undefined;
     }, {
         status: "passed" | "failed" | "warning";
+        title: string;
         id: string;
         confidence: number;
         relatedTestIds: number[];
@@ -783,14 +784,13 @@ export declare const WorkflowContextSchema: z.ZodObject<{
         source: "replay" | "visual" | "lighthouse" | "console" | "test";
         severity: "high" | "medium" | "low" | "critical" | "info";
         blocking: boolean;
-        title: string;
         issue: string;
         changedFileHints: string[];
         evidence: {
             url: string;
+            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             id: string;
             name: string;
-            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             contentType?: string | undefined;
             flow?: string | undefined;
             testId?: number | undefined;
@@ -934,9 +934,9 @@ export declare const WorkflowContextSchema: z.ZodObject<{
     metadata: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }, "strip", z.ZodTypeAny, {
     status: "failed" | "cancelled" | "completed" | "executing" | "initialized" | "planning" | "aggregating" | "publishing" | "analyzing" | "commenting" | "partial_failed";
+    kind: "pr_validation";
     projectId: number;
     id: string;
-    kind: "pr_validation";
     metadata: Record<string, unknown>;
     source: "mcp" | "github_action" | "cli" | "ide" | "dashboard";
     suggestedFixes: string[];
@@ -1015,9 +1015,9 @@ export declare const WorkflowContextSchema: z.ZodObject<{
     };
     artifacts: {
         url: string;
+        kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
         id: string;
         name: string;
-        kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
         contentType?: string | undefined;
         flow?: string | undefined;
         testId?: number | undefined;
@@ -1026,6 +1026,7 @@ export declare const WorkflowContextSchema: z.ZodObject<{
     }[];
     findings: {
         status: "passed" | "failed" | "warning";
+        title: string;
         id: string;
         confidence: number;
         relatedTestIds: number[];
@@ -1033,14 +1034,13 @@ export declare const WorkflowContextSchema: z.ZodObject<{
         source: "replay" | "visual" | "lighthouse" | "console" | "test";
         severity: "high" | "medium" | "low" | "critical" | "info";
         blocking: boolean;
-        title: string;
         issue: string;
         changedFileHints: string[];
         evidence: {
             url: string;
+            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             id: string;
             name: string;
-            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             contentType?: string | undefined;
             flow?: string | undefined;
             testId?: number | undefined;
@@ -1086,9 +1086,9 @@ export declare const WorkflowContextSchema: z.ZodObject<{
     } | undefined;
 }, {
     status: "failed" | "cancelled" | "completed" | "executing" | "initialized" | "planning" | "aggregating" | "publishing" | "analyzing" | "commenting" | "partial_failed";
+    kind: "pr_validation";
     projectId: number;
     id: string;
-    kind: "pr_validation";
     metadata: Record<string, unknown>;
     source: "mcp" | "github_action" | "cli" | "ide" | "dashboard";
     suggestedFixes: string[];
@@ -1167,9 +1167,9 @@ export declare const WorkflowContextSchema: z.ZodObject<{
     };
     artifacts: {
         url: string;
+        kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
         id: string;
         name: string;
-        kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
         contentType?: string | undefined;
         flow?: string | undefined;
         testId?: number | undefined;
@@ -1178,6 +1178,7 @@ export declare const WorkflowContextSchema: z.ZodObject<{
     }[];
     findings: {
         status: "passed" | "failed" | "warning";
+        title: string;
         id: string;
         confidence: number;
         relatedTestIds: number[];
@@ -1185,14 +1186,13 @@ export declare const WorkflowContextSchema: z.ZodObject<{
         source: "replay" | "visual" | "lighthouse" | "console" | "test";
         severity: "high" | "medium" | "low" | "critical" | "info";
         blocking: boolean;
-        title: string;
         issue: string;
         changedFileHints: string[];
         evidence: {
             url: string;
+            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             id: string;
             name: string;
-            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             contentType?: string | undefined;
             flow?: string | undefined;
             testId?: number | undefined;
@@ -1450,8 +1450,8 @@ export declare const IncidentMatchSchema: z.ZodObject<{
     resolved_by_name: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     title: string;
-    match_id: string;
     match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+    match_id: string;
     description: string;
     match_score: number;
     match_tier: "none" | "high" | "medium" | "low";
@@ -1473,8 +1473,8 @@ export declare const IncidentMatchSchema: z.ZodObject<{
     resolved_by_name?: string | undefined;
 }, {
     title: string;
-    match_id: string;
     match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+    match_id: string;
     description: string;
     match_score: number;
     match_tier: "none" | "high" | "medium" | "low";
@@ -1527,8 +1527,8 @@ export declare const IncidentContextSchema: z.ZodObject<{
         resolved_by_name: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         title: string;
-        match_id: string;
         match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+        match_id: string;
         description: string;
         match_score: number;
         match_tier: "none" | "high" | "medium" | "low";
@@ -1550,8 +1550,8 @@ export declare const IncidentContextSchema: z.ZodObject<{
         resolved_by_name?: string | undefined;
     }, {
         title: string;
-        match_id: string;
         match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+        match_id: string;
         description: string;
         match_score: number;
         match_tier: "none" | "high" | "medium" | "low";
@@ -1593,15 +1593,13 @@ export declare const IncidentContextSchema: z.ZodObject<{
     }>>;
     insight: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    match_tier: "none" | "high" | "medium" | "low";
     contract_version: "incident_context.v1";
-    project_id: number;
-    match_count: number;
     incident_match_score: number;
+    match_count: number;
     matches: {
         title: string;
-        match_id: string;
         match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+        match_id: string;
         description: string;
         match_score: number;
         match_tier: "none" | "high" | "medium" | "low";
@@ -1622,6 +1620,8 @@ export declare const IncidentContextSchema: z.ZodObject<{
         overlapping_files?: string[] | undefined;
         resolved_by_name?: string | undefined;
     }[];
+    project_id: number;
+    match_tier: "none" | "high" | "medium" | "low";
     insight: string;
     top_resolution?: {
         cases_count: number;
@@ -1631,15 +1631,13 @@ export declare const IncidentContextSchema: z.ZodObject<{
         avg_resolve_minutes?: number | undefined;
     } | undefined;
 }, {
-    match_tier: "none" | "high" | "medium" | "low";
     contract_version: "incident_context.v1";
-    project_id: number;
-    match_count: number;
     incident_match_score: number;
+    match_count: number;
     matches: {
         title: string;
-        match_id: string;
         match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+        match_id: string;
         description: string;
         match_score: number;
         match_tier: "none" | "high" | "medium" | "low";
@@ -1660,6 +1658,8 @@ export declare const IncidentContextSchema: z.ZodObject<{
         overlapping_files?: string[] | undefined;
         resolved_by_name?: string | undefined;
     }[];
+    project_id: number;
+    match_tier: "none" | "high" | "medium" | "low";
     insight: string;
     top_resolution?: {
         cases_count: number;
@@ -2025,11 +2025,11 @@ export declare const ValidatePrRequestSchema: z.ZodObject<{
     idempotency_key: z.ZodOptional<z.ZodString>;
     confirm: z.ZodDefault<z.ZodBoolean>;
 }, "strip", z.ZodTypeAny, {
+    project_id: number;
     repository: {
         name: string;
         owner: string;
     };
-    project_id: number;
     pull_request: {
         number: number;
         url?: string | undefined;
@@ -2061,11 +2061,11 @@ export declare const ValidatePrRequestSchema: z.ZodObject<{
     confirm: boolean;
     idempotency_key?: string | undefined;
 }, {
+    project_id: number;
     repository: {
         name: string;
         owner: string;
     };
-    project_id: number;
     pull_request: {
         number: number;
         url?: string | undefined;
@@ -2355,9 +2355,9 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
             metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
         }, "strip", z.ZodTypeAny, {
             url: string;
+            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             id: string;
             name: string;
-            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             contentType?: string | undefined;
             flow?: string | undefined;
             testId?: number | undefined;
@@ -2365,9 +2365,9 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
             metadata?: Record<string, unknown> | undefined;
         }, {
             url: string;
+            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             id: string;
             name: string;
-            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             contentType?: string | undefined;
             flow?: string | undefined;
             testId?: number | undefined;
@@ -2383,6 +2383,7 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
         confidence: z.ZodNumber;
     }, "strip", z.ZodTypeAny, {
         status: "passed" | "failed" | "warning";
+        title: string;
         id: string;
         confidence: number;
         relatedTestIds: number[];
@@ -2390,14 +2391,13 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
         source: "replay" | "visual" | "lighthouse" | "console" | "test";
         severity: "high" | "medium" | "low" | "critical" | "info";
         blocking: boolean;
-        title: string;
         issue: string;
         changedFileHints: string[];
         evidence: {
             url: string;
+            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             id: string;
             name: string;
-            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             contentType?: string | undefined;
             flow?: string | undefined;
             testId?: number | undefined;
@@ -2413,6 +2413,7 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
         consoleErrors?: string[] | undefined;
     }, {
         status: "passed" | "failed" | "warning";
+        title: string;
         id: string;
         confidence: number;
         relatedTestIds: number[];
@@ -2420,14 +2421,13 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
         source: "replay" | "visual" | "lighthouse" | "console" | "test";
         severity: "high" | "medium" | "low" | "critical" | "info";
         blocking: boolean;
-        title: string;
         issue: string;
         changedFileHints: string[];
         evidence: {
             url: string;
+            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             id: string;
             name: string;
-            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             contentType?: string | undefined;
             flow?: string | undefined;
             testId?: number | undefined;
@@ -2608,8 +2608,8 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
                 resolved_by_name: z.ZodOptional<z.ZodString>;
             }, "strip", z.ZodTypeAny, {
                 title: string;
-                match_id: string;
                 match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+                match_id: string;
                 description: string;
                 match_score: number;
                 match_tier: "none" | "high" | "medium" | "low";
@@ -2631,8 +2631,8 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
                 resolved_by_name?: string | undefined;
             }, {
                 title: string;
-                match_id: string;
                 match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+                match_id: string;
                 description: string;
                 match_score: number;
                 match_tier: "none" | "high" | "medium" | "low";
@@ -2674,15 +2674,13 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
             }>>;
             insight: z.ZodString;
         }, "strip", z.ZodTypeAny, {
-            match_tier: "none" | "high" | "medium" | "low";
             contract_version: "incident_context.v1";
-            project_id: number;
-            match_count: number;
             incident_match_score: number;
+            match_count: number;
             matches: {
                 title: string;
-                match_id: string;
                 match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+                match_id: string;
                 description: string;
                 match_score: number;
                 match_tier: "none" | "high" | "medium" | "low";
@@ -2703,6 +2701,8 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
                 overlapping_files?: string[] | undefined;
                 resolved_by_name?: string | undefined;
             }[];
+            project_id: number;
+            match_tier: "none" | "high" | "medium" | "low";
             insight: string;
             top_resolution?: {
                 cases_count: number;
@@ -2712,15 +2712,13 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
                 avg_resolve_minutes?: number | undefined;
             } | undefined;
         }, {
-            match_tier: "none" | "high" | "medium" | "low";
             contract_version: "incident_context.v1";
-            project_id: number;
-            match_count: number;
             incident_match_score: number;
+            match_count: number;
             matches: {
                 title: string;
-                match_id: string;
                 match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+                match_id: string;
                 description: string;
                 match_score: number;
                 match_tier: "none" | "high" | "medium" | "low";
@@ -2741,6 +2739,8 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
                 overlapping_files?: string[] | undefined;
                 resolved_by_name?: string | undefined;
             }[];
+            project_id: number;
+            match_tier: "none" | "high" | "medium" | "low";
             insight: string;
             top_resolution?: {
                 cases_count: number;
@@ -2800,15 +2800,13 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
             unique_components?: number | undefined;
         } | undefined;
         incident_context?: {
-            match_tier: "none" | "high" | "medium" | "low";
             contract_version: "incident_context.v1";
-            project_id: number;
-            match_count: number;
             incident_match_score: number;
+            match_count: number;
             matches: {
                 title: string;
-                match_id: string;
                 match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+                match_id: string;
                 description: string;
                 match_score: number;
                 match_tier: "none" | "high" | "medium" | "low";
@@ -2829,6 +2827,8 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
                 overlapping_files?: string[] | undefined;
                 resolved_by_name?: string | undefined;
             }[];
+            project_id: number;
+            match_tier: "none" | "high" | "medium" | "low";
             insight: string;
             top_resolution?: {
                 cases_count: number;
@@ -2888,15 +2888,13 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
             unique_components?: number | undefined;
         } | undefined;
         incident_context?: {
-            match_tier: "none" | "high" | "medium" | "low";
             contract_version: "incident_context.v1";
-            project_id: number;
-            match_count: number;
             incident_match_score: number;
+            match_count: number;
             matches: {
                 title: string;
-                match_id: string;
                 match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+                match_id: string;
                 description: string;
                 match_score: number;
                 match_tier: "none" | "high" | "medium" | "low";
@@ -2917,6 +2915,8 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
                 overlapping_files?: string[] | undefined;
                 resolved_by_name?: string | undefined;
             }[];
+            project_id: number;
+            match_tier: "none" | "high" | "medium" | "low";
             insight: string;
             top_resolution?: {
                 cases_count: number;
@@ -3068,6 +3068,8 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
     }>>;
 }, "strip", z.ZodTypeAny, {
     status: "passed" | "failed" | "partial";
+    contract_version: "pr_validation.v1";
+    project_id: number;
     metadata: {
         execution_mode: "planned_only" | "executed";
         replayed: boolean;
@@ -3082,6 +3084,7 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
     };
     findings: {
         status: "passed" | "failed" | "warning";
+        title: string;
         id: string;
         confidence: number;
         relatedTestIds: number[];
@@ -3089,14 +3092,13 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
         source: "replay" | "visual" | "lighthouse" | "console" | "test";
         severity: "high" | "medium" | "low" | "critical" | "info";
         blocking: boolean;
-        title: string;
         issue: string;
         changedFileHints: string[];
         evidence: {
             url: string;
+            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             id: string;
             name: string;
-            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             contentType?: string | undefined;
             flow?: string | undefined;
             testId?: number | undefined;
@@ -3112,8 +3114,6 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
         consoleErrors?: string[] | undefined;
     }[];
     workflow_id: string;
-    contract_version: "pr_validation.v1";
-    project_id: number;
     impact_summary: {
         changed_files: number;
         impacted_flows: number;
@@ -3211,15 +3211,13 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
             unique_components?: number | undefined;
         } | undefined;
         incident_context?: {
-            match_tier: "none" | "high" | "medium" | "low";
             contract_version: "incident_context.v1";
-            project_id: number;
-            match_count: number;
             incident_match_score: number;
+            match_count: number;
             matches: {
                 title: string;
-                match_id: string;
                 match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+                match_id: string;
                 description: string;
                 match_score: number;
                 match_tier: "none" | "high" | "medium" | "low";
@@ -3240,6 +3238,8 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
                 overlapping_files?: string[] | undefined;
                 resolved_by_name?: string | undefined;
             }[];
+            project_id: number;
+            match_tier: "none" | "high" | "medium" | "low";
             insight: string;
             top_resolution?: {
                 cases_count: number;
@@ -3282,6 +3282,8 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
     comment_draft?: string | undefined;
 }, {
     status: "passed" | "failed" | "partial";
+    contract_version: "pr_validation.v1";
+    project_id: number;
     repository: {
         name: string;
         owner: string;
@@ -3291,6 +3293,7 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
     };
     findings: {
         status: "passed" | "failed" | "warning";
+        title: string;
         id: string;
         confidence: number;
         relatedTestIds: number[];
@@ -3298,14 +3301,13 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
         source: "replay" | "visual" | "lighthouse" | "console" | "test";
         severity: "high" | "medium" | "low" | "critical" | "info";
         blocking: boolean;
-        title: string;
         issue: string;
         changedFileHints: string[];
         evidence: {
             url: string;
+            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             id: string;
             name: string;
-            kind: "replay" | "lighthouse" | "screenshot" | "visual_diff" | "console" | "trace";
             contentType?: string | undefined;
             flow?: string | undefined;
             testId?: number | undefined;
@@ -3321,8 +3323,6 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
         consoleErrors?: string[] | undefined;
     }[];
     workflow_id: string;
-    contract_version: "pr_validation.v1";
-    project_id: number;
     impact_summary: {
         changed_files: number;
         impacted_flows: number;
@@ -3420,15 +3420,13 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
             unique_components?: number | undefined;
         } | undefined;
         incident_context?: {
-            match_tier: "none" | "high" | "medium" | "low";
             contract_version: "incident_context.v1";
-            project_id: number;
-            match_count: number;
             incident_match_score: number;
+            match_count: number;
             matches: {
                 title: string;
-                match_id: string;
                 match_type: "prior_validation" | "failure_pattern" | "resolution" | "test_history";
+                match_id: string;
                 description: string;
                 match_score: number;
                 match_tier: "none" | "high" | "medium" | "low";
@@ -3449,6 +3447,8 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
                 overlapping_files?: string[] | undefined;
                 resolved_by_name?: string | undefined;
             }[];
+            project_id: number;
+            match_tier: "none" | "high" | "medium" | "low";
             insight: string;
             top_resolution?: {
                 cases_count: number;

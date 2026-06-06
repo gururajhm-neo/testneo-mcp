@@ -1,16 +1,18 @@
 # TestNeo MCP Tool Reference
 
-**Canonical document** (for **testneo.ai** / marketing / git): **`docs/mcp/mcp-tool-reference.md`** in the TestNeo API monorepo. The MCP server in **`packages/testneo-mcp-server`** exposes **55** tools, all prefixed with `testneo_`. The **`@testneo/mcp-server`** npm package ships the **same** Markdown as **`packages/testneo-mcp-server/docs/MCP_TOOL_REFERENCE.md`** — copy from this file before publish (see **Website and npm package sync** at the end of this page).
+**Canonical document** (for **testneo.ai** / marketing / git): **`docs/mcp/mcp-tool-reference.md`** in the TestNeo API monorepo. The MCP server in **`packages/testneo-mcp-server`** exposes **65** tools, all prefixed with `testneo_`. The **`@testneo/mcp-server`** npm package ships the **same** Markdown as **`packages/testneo-mcp-server/docs/MCP_TOOL_REFERENCE.md`** — copy from this file before publish (see **Website and npm package sync** at the end of this page).
 
 **Agent workflows:** `qa_intelligence_workflow`, `triage_failure_workflow`, and `rerun_decision_workflow` are **not** separate tool names. They are values of **`workflow_type`** on **`testneo_run_agent_workflow`** (see [Agent workflow tool](#agent-workflow-tool-testneo_run_agent_workflow)).
 
 ## Alphabetical index (all tools)
 
-`testneo_ai_assistant_query` · `testneo_api_project_openapi_impact` · `testneo_api_project_upload_openapi` · `testneo_apply_route_hardening` · `testneo_bootstrap_web_mcp_project` · `testneo_create_web_project` · `testneo_create_web_project_environment` · `testneo_delete_saved_api_test_chain` · `testneo_execute_generated_test_case` · `testneo_explain_failure` · `testneo_export_playwright_spec` · `testneo_figma_image_to_tests_workflow` · `testneo_figma_to_tests_workflow` · `testneo_find_test_cases` · `testneo_generate_tests_from_context` · `testneo_get_execution_logs` · `testneo_get_execution_status` · `testneo_get_execution_summary` · `testneo_get_failure_bundle` · `testneo_get_incident_matches` · `testneo_get_local_agent_status` · `testneo_get_pass_fail_trend` · `testneo_get_pr_validation_detail` · `testneo_get_pr_validation_history` · `testneo_get_project_route_map` · `testneo_get_risk_signals` · `testneo_get_unified_context_by_name` · `testneo_ingest_figma_context` · `testneo_list_projects` · `testneo_list_recent_executions` · `testneo_list_saved_api_test_chains` · `testneo_list_tests_by_tags` · `testneo_list_unified_contexts` · `testneo_pr_validation_workflow` · `testneo_preview_generated_tests` · `testneo_rerun_failed` · `testneo_run_agent_workflow` · `testneo_run_api_test_chain` · `testneo_run_batch_by_tags` · `testneo_run_generated_test_pipeline` · `testneo_run_playwright_spec_preview` · `testneo_save_api_test_chain` · `testneo_search_failures` · `testneo_set_project_route_map` · `testneo_suggest_api_test_chains` · `testneo_suggest_fix` · `testneo_swagger_impact_actions` · `testneo_swagger_impact_analysis` · `testneo_swagger_preview` · `testneo_swagger_upload_and_generate` · `testneo_trigger_playwright_execution` · `testneo_update_test_case_nlp` · `testneo_validate_connection` · `testneo_validate_pr` · `testneo_watch_execution`
+`testneo_ai_assistant_query` · `testneo_api_project_openapi_impact` · `testneo_api_project_upload_openapi` · `testneo_apply_route_hardening` · `testneo_bootstrap_web_mcp_project` · `testneo_create_web_project` · `testneo_create_web_project_environment` · `testneo_delete_saved_api_test_chain` · `testneo_execute_generated_test_case` · `testneo_explain_failure` · `testneo_export_playwright_spec` · `testneo_figma_image_to_tests_workflow` · `testneo_figma_to_tests_workflow` · `testneo_find_test_cases` · `testneo_generate_tests_from_context` · `testneo_get_execution_logs` · `testneo_get_execution_status` · `testneo_get_execution_summary` · `testneo_get_failure_bundle` · `testneo_get_incident_matches` · `testneo_get_local_agent_status` · `testneo_get_pass_fail_trend` · `testneo_get_pr_validation_detail` · `testneo_get_pr_validation_history` · `testneo_get_project_route_map` · `testneo_get_risk_signals` · `testneo_get_unified_context_by_name` · `testneo_ingest_confluence` · `testneo_ingest_engineering_memory_csv` · `testneo_ingest_figma_context` · `testneo_ingest_postmortem` · `testneo_list_engineering_memory` · `testneo_list_projects` · `testneo_list_recent_executions` · `testneo_list_saved_api_test_chains` · `testneo_list_tests_by_tags` · `testneo_list_unified_contexts` · `testneo_pr_validation_workflow` · `testneo_preview_generated_tests` · `testneo_rerun_failed` · `testneo_run_agent_workflow` · `testneo_run_api_test_chain` · `testneo_run_batch_by_tags` · `testneo_run_generated_test_pipeline` · `testneo_run_playwright_spec_preview` · `testneo_save_api_test_chain` · `testneo_search_failures` · `testneo_set_project_route_map` · `testneo_suggest_api_test_chains` · `testneo_suggest_fix` · `testneo_swagger_impact_actions` · `testneo_swagger_impact_analysis` · `testneo_swagger_preview` · `testneo_swagger_upload_and_generate` · `testneo_sync_engineering_memory` · `testneo_trigger_playwright_execution` · `testneo_update_test_case_nlp` · `testneo_validate_connection` · `testneo_validate_pr` · `testneo_watch_execution`
 
 ## PR Validation & Release Confidence
 
 Seven tools that turn any MCP-compatible IDE into a full **release-confidence engine**: impact analysis → risk scoring → AI-quality root causes → prioritised fix plan — all in one chat thread. Works in Cursor, VS Code + Copilot, Windsurf, Claude Code, Cline, and any other MCP client. IDE playbook files are pre-configured in the TestNeo API repo (`.cursor/rules/`, `.github/copilot-instructions.md`, `AGENTS.md`, `.vscode/mcp.json`).
+
+**Chat recipes:** [MCP Workflow 7](./mcp-workflows.md#workflow-7-pr-validation--release-brief-release-intelligence) (PR validate) · [Workflow 8](./mcp-workflows.md#workflow-8-engineering-memory--live-pr-matches) (Engineering Memory) · [Workflow 9](./mcp-workflows.md#workflow-9-release-confidence-qa-lead--pm) (ship confidence) · [Workflow 10](./mcp-workflows.md#workflow-10-patterns--outcome-learning) (patterns + outcome learning) · [Workflow 11](./mcp-workflows.md#workflow-11-post-ship-webhooks-jira--pagerduty) (post-ship webhooks).
 
 ### Risk levels
 
@@ -48,6 +50,100 @@ Seven tools that turn any MCP-compatible IDE into a full **release-confidence en
 - **`testneo_get_risk_signals`** — Read-only. Per-test flakiness scores and 7-day/30-day failure rates for specific test IDs. Call before `testneo_validate_pr` to understand which tests are historically risky. Inputs: `project_id` + `test_ids` array.
 
 - **`testneo_get_incident_matches`** — Read-only. **Engineering Memory** lookup without a full validation run. Connects prior `WorkflowContext` validations, `FailurePattern` clusters, and `TestFailureResolution` records to changed files, components, or test IDs. Returns incident match score (0–100), ranked matches, and top prior fix. Also included automatically in every `testneo_pr_validation_workflow` Release Brief.
+
+- **`testneo_ingest_engineering_memory_csv`** — Write (no `confirm` flag). Upload a bug-report CSV from the IDE workspace into Engineering Memory. Args: `project_id` + `csv_path` (workspace-relative) **or** `csv_file_base64` + `csv_filename`. Backend: `POST /api/web/v1/engineering-memory/ingest/csv`. Matching to PRs is automatic via changed-file overlap — bugs are not tagged with PR numbers.
+
+- **`testneo_sync_engineering_memory`** — Write. Sync Jira bugs into Engineering Memory (requires Jira connected in project settings).
+
+- **`testneo_list_engineering_memory`** — Read-only. List ingested memory entries (`bug_csv`, `jira`, `postmortem_upload`). Optional filters: `source`, `area`, **`pattern_id`**.
+
+- **`testneo_list_engineering_memory_patterns`** — Read-only. Unified failure patterns with `source_mix`, **trend** (30d vs prior 30d), `best_resolution`. Pass **`pattern_id`** for full detail + contributing entries. Backend: `GET …/engineering-memory/patterns`.
+
+- **`testneo_refresh_engineering_memory_patterns`** — Write (no confirm). Re-cluster entries into patterns and refresh aggregates. Backend: `POST …/engineering-memory/patterns/refresh`.
+
+- **`testneo_ingest_postmortem`** — Write (no `confirm` flag). Ingest a postmortem / RCA into Engineering Memory. Args: `project_id` + `title` + `body` **or** `md_path` (workspace-relative `.md`). Optional `external_id` for stable upsert. Extracts impact areas, root cause, resolution actions, and **related file paths** for deterministic PR matching. Backend: `POST /api/web/v1/engineering-memory/ingest/postmortem`. Preview: `POST …/ingest/postmortem/preview`.
+
+- **`testneo_ingest_confluence`** — Write (no `confirm` flag). Import a Confluence postmortem page by **page id** or full URL. Uses the same Atlassian credentials as Jira Integration. Backend: `POST /api/web/v1/engineering-memory/ingest/confluence`.
+
+**Auto confidence bump (5a):** When a PR re-validation completes **PASS/WARN** after a prior **BLOCK** on the same PR, the API bumps matching pattern `confidence` and `resolution_count` automatically — no MCP call required.
+
+### Release bundle, gate, and outcome learning (Phase 5)
+
+- **`testneo_create_release_bundle`** — Create a named release candidate scored against specific PR validation workflow IDs. Returns `bundle_id`, confidence, unlock actions.
+
+- **`testneo_get_release_readiness`** — Aggregate or bundle-scoped release confidence (0–100).
+
+- **`testneo_generate_release_brief`** — AI release brief with go/no-go, checklist, density narrative.
+
+- **`testneo_evaluate_release_gate`** — Evaluate gate policy for a bundle (`GATE_PASS` | `GATE_BLOCK` | `GATE_WARN`). **GATE_PASS** stubs a `release_outcomes` row for learning.
+
+- **`testneo_record_release_outcome`** — Mark deployed (POST) or record post-ship signals (PATCH with `outcome_id`: rollback, incident 7d/30d, hotfixes).
+
+- **`testneo_get_release_outcomes`** — List ship snapshots and recorded outcomes for a project.
+
+- **`testneo_get_release_calibration`** — Read-only suggestions from historical outcomes (e.g. “Ignored HIGH memory patterns → 3× rollback”). Never auto-changes policy.
+
+### Post-ship webhooks (Jira + PagerDuty — Phase 5 extension)
+
+Production signals pre-fill the **open release outcome stub** (created by `GATE_PASS` or Mark deployed). Jira webhooks also ingest **Engineering Memory**. User still **`testneo_record_release_outcome`** to finalize.
+
+- **`testneo_get_release_webhook_config`** — Read-only. Webhook URLs, Jira match rules, PagerDuty connection status, open stub readiness. Parity with Release Readiness → Post-ship webhooks panel.
+
+- **`testneo_test_release_webhook`** — Send demo `jira` or `pagerduty` event through the production pipeline (no ngrok). Pre-fills notes and incident flags on the open stub. Requires open outcome stub.
+
+**Migration (self-hosted):** `migrations/add_release_webhooks.sql`
+
+**Web UI:** `/web/release-readiness?project_id=<ID>` → Post-ship webhooks → **Send test Jira/PagerDuty event**
+
+**Orchestration:** [Workflow 11](./mcp-workflows.md#workflow-11-post-ship-webhooks-jira--pagerduty) · [EM9 prompt](./mcp-prompt-packs.md#em9--post-ship-webhooks-demo-qa-lead--em) · [Scenario F demo](../demo/PROJECT10_ENGINEERING_MEMORY_TEST.md#demo-scenario-f--post-ship-webhooks-phase-5-extension) · [Release 2.1 shipped](../product/RELEASE_2_1_ENGINEERING_MEMORY_SHIPPED.md)
+
+### Release 2.2 — planned MCP tools (Phase 6A — not implemented)
+
+| Tool (planned) | Purpose |
+|----------------|---------|
+| `testneo_mirror_test_failures_to_engineering_memory` | Promote test failure clusters → EM entries |
+| `testneo_get_release_webhook_deliveries` | Audit last N webhook deliveries per project |
+
+See [Workflow 12](./mcp-workflows.md#workflow-12-learning-loop-hardening-release-22--planned) · [Phase 6A spec](../product/ENGINEERING_MEMORY_PHASES_2_5_MASTER_PLAN.md#phase-6a--learning-loop-hardening-release-22-planned)
+
+### IDE workflow: bug CSV → instant PR analysis
+
+```
+Developer in Cursor / VS Code:
+  "Upload bugs.csv and validate my PR"
+    ↓
+testneo_pr_validation_workflow(
+  project_id,
+  repository, pull_request, git,
+  engineering_memory_csv_path: "bugs/orders_incidents.csv",  ← optional one-shot
+  confirm: false
+)
+    ↓
+Step 0: CSV → engineering_memory_entries (sync ingest)
+Step 1: validate_pr + incident-context lookup (changed files vs memory)
+    ↓
+Release Brief includes:
+  📥 Engineering Memory ingest summary
+  🔁 Historical Incident Matches (live scores)
+```
+
+Or two-step: `testneo_ingest_engineering_memory_csv` then `testneo_pr_validation_workflow`.
+
+### Jira auto-sync before validate (Phase A — default ON)
+
+`testneo_pr_validation_workflow` runs **Jira → Engineering Memory sync first** when `sync_jira_before_validate` is true (default). No separate sync step in the IDE.
+
+```
+Developer: "validate my PR"
+  ↓
+testneo_pr_validation_workflow(project_id, repository, pull_request, git, confirm: false)
+  ↓
+Step 0a: Jira bugs/incidents → engineering_memory_entries (skipped if Jira not connected)
+Step 0b: optional engineering_memory_csv_path
+Step 1: validate_pr + incident-context lookup
+```
+
+Set `sync_jira_before_validate: false` to skip. GitHub webhooks use the same flag in **Project → GitHub Release Intelligence → Sync Jira bugs before validate**.
 
 ### One-shot IDE workflow
 
@@ -93,7 +189,19 @@ If BLOCK:
     ]
   },
   "execution": { "run_impacted_tests": true },
+  "sync_jira_before_validate": true,
+  "jira_sync_max_issues": 50,
+  "jira_sync_lookback_days": 90,
+  "engineering_memory_csv_path": "scripts/fixtures/project10_engineering_memory_bugs.csv",
   "confirm": false
+}
+```
+
+**`testneo_ingest_engineering_memory_csv`**
+```json
+{
+  "project_id": 10,
+  "csv_path": "scripts/fixtures/project10_engineering_memory_bugs.csv"
 }
 ```
 
@@ -519,9 +627,9 @@ Matches names like **`Figma — Checkout flow`** when you query `"figma checkout
 
 | Audience | File to use |
 |----------|-------------|
-| **Hosted docs (testneo.ai)** | Publish from monorepo **`docs/mcp/mcp-tool-reference.md`** (this canonical file). |
+| **Hosted docs (testneo.ai)** | **Release Intelligence:** publish from **`docs/product/RELEASE_INTELLIGENCE_WEBSITE_CONTENT.md`** + **`docs/product/ENGINEERING_MEMORY_CUSTOMER_GUIDE.md`** → [release-intelligence.html](https://testneo.ai/docs/release-intelligence.html). **MCP tools:** publish from **`docs/mcp/mcp-tool-reference.md`** (this file) → [testneo-mcp.html](https://testneo.ai/docs/testneo-mcp.html). |
 | **npm package `@testneo/mcp-server`** | Before release, copy this file to **`packages/testneo-mcp-server/docs/MCP_TOOL_REFERENCE.md`** (see `packages/testneo-mcp-server/scripts/sync-public-mcp-repo.sh` or `scripts/push-public-mirror-local.sh` in that package). |
 | **GitHub mirror** | Same content as the package doc; CI in `.github/workflows/sync-mcp-public-mirror.yml` watches **`docs/mcp/mcp-tool-reference.md`**. |
 
-Keeping **one** source of truth (`docs/mcp/mcp-tool-reference.md`) avoids drift between the website, npm README, and MCP server bundle.
+Keeping **one** source of truth per page avoids drift between the website, npm README, and MCP server bundle.
 

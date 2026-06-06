@@ -7,6 +7,7 @@
 | **Product** | [testneo.ai](https://testneo.ai) |
 | **Sign up & app** | [app.testneo.ai/signup](https://app.testneo.ai/signup) |
 | **Hosted MCP docs** (quickstart, tools, workflows, security) | [testneo.ai/docs/testneo-mcp.html](https://testneo.ai/docs/testneo-mcp.html) |
+| **Release Intelligence** (Memory, patterns, outcomes) | [testneo.ai/docs/release-intelligence.html](https://testneo.ai/docs/release-intelligence.html) · [Customer guide](../../docs/product/ENGINEERING_MEMORY_CUSTOMER_GUIDE.md) |
 | **Source** | [github.com/gururajhm-neo/testneo-mcp](https://github.com/gururajhm-neo/testneo-mcp) |
 
 ---

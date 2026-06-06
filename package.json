@@ -1,6 +1,6 @@
 {
   "name": "@testneo/mcp-server",
-  "version": "0.1.4",
+  "version": "0.1.7",
   "description": "Model Context Protocol server for TestNeo quality workflows",
   "license": "GPL-3.0",
   "repository": {
@@ -35,7 +35,8 @@
     "test": "node scripts/route-hardening-check.mjs && node scripts/unified-context-discovery-check.mjs && node scripts/project-preconditions-check.mjs && node scripts/tool-telemetry-check.mjs && node scripts/project-route-map-check.mjs && node scripts/execution-contracts-check.mjs && node scripts/policy-engine-check.mjs && node scripts/idempotency-check.mjs && node scripts/swagger-intel-check.mjs && node scripts/api-error-hints-check.mjs",
     "smoke": "node dist/smoke.js",
     "smoke:validate-pr:mock": "npm run build && node dist/validatePrMockSmoke.js",
-    "smoke:validate-pr:live": "npm run build && node dist/validatePrLiveSmoke.js"
+    "smoke:validate-pr:live": "npm run build && node dist/validatePrLiveSmoke.js",
+    "smoke:engineering-memory-csv": "npm run build && node dist/engineeringMemoryCsvSmoke.js"
   },
   "engines": {
     "node": ">=20"

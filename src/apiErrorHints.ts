@@ -51,8 +51,22 @@ export function summarizeTestNeoHttpError(status: number, bodyText: string): str
   const detail = d;
 
   const lines: string[] = [];
+  const errorCode = typeof detail.error === "string" ? detail.error : "";
+  const friendlyByCode: Record<string, string> = {
+    release_verification_limit_reached:
+      "Monthly release verification limit reached. Each PR validation counts as one verification (impact, execution, evidence, PASS/WARN/BLOCK).",
+    mcp_call_limit_reached:
+      "Daily MCP call limit reached (write operations). Upgrade to Pro for unlimited MCP, or wait until tomorrow.",
+    test_run_limit_reached:
+      "Monthly test execution limit reached inside your plan. Upgrade for more capacity or wait for the monthly reset.",
+    daily_chat_limit_reached: "Daily AI chat limit reached. Upgrade your plan or try again tomorrow.",
+    project_limit_reached: "Project limit reached. Upgrade to create more projects.",
+  };
+  if (errorCode && friendlyByCode[errorCode]) {
+    lines.push(friendlyByCode[errorCode]);
+  }
   if (typeof detail.message === "string") lines.push(String(detail.message));
-  else if (typeof detail.error === "string") lines.push(String(detail.error));
+  else if (errorCode && !friendlyByCode[errorCode]) lines.push(errorCode);
 
   if (typeof detail.error_code === "string") {
     lines.push(`(code: ${String(detail.error_code)})`);
