@@ -278,6 +278,15 @@ exports.ValidatePrRequestSchema = zod_1.z.object({
         run_lighthouse: zod_1.z.boolean().default(true),
         capture_replay: zod_1.z.boolean().default(true),
         max_parallelism: zod_1.z.number().int().min(1).max(8).default(4),
+        mode: zod_1.z
+            .enum(["local", "cloud"])
+            .optional()
+            .describe("Execution mode override. Falls back to TESTNEO_MCP_DEFAULT_EXECUTION_MODE."),
+        platform: zod_1.z
+            .string()
+            .optional()
+            .describe("Cloud/local platform override (e.g. saucelabs, browserstack, local). " +
+            "Falls back to TESTNEO_MCP_DEFAULT_EXECUTION_PLATFORM."),
     })
         .default({}),
     output: zod_1.z

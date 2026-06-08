@@ -74,6 +74,10 @@ import {
   sha256Utf8,
   wrapSwaggerIntel,
 } from "../swaggerIntel.js";
+import {
+  DeveloperReleaseWorkflowInputSchema,
+  runDeveloperReleaseWorkflow,
+} from "../developerReleaseWorkflow.js";
 
 const routeHardeningToolSchema = z
   .object({
@@ -1207,6 +1211,10 @@ export function registerTools(
       }
 
       const useAgent = shouldPostUseAgentToExecuteApi();
+      const executionMode =
+        request.execution?.mode ?? batchExecutionDefaults.defaultExecutionMode;
+      const executionPlatform =
+        request.execution?.platform ?? batchExecutionDefaults.defaultExecutionPlatform;
       for (const candidate of uniqueCandidates.values()) {
         let resolvedTestId =
           typeof candidate.test_id === "number" && Number.isFinite(candidate.test_id) && candidate.test_id > 0
@@ -1261,6 +1269,8 @@ export function registerTools(
               body: {
                 execution_source: "mcp_validate_pr",
                 trigger_reason: "orchestrated_pr_validation",
+                execution_mode: executionMode,
+                execution_platform: executionPlatform,
                 ...(useAgent ? { use_agent: true } : {}),
               },
               timeoutMs: client.longRequestTimeoutMs,
@@ -4252,6 +4262,8 @@ export function registerTools(
         execution: z
           .object({
             run_impacted_tests: z.boolean().default(true),
+            mode: z.enum(["local", "cloud"]).optional(),
+            platform: z.string().optional(),
           })
           .default({}),
         confirm: z
@@ -4375,6 +4387,8 @@ export function registerTools(
             run_lighthouse: false,
             capture_replay: false,
             max_parallelism: 4,
+            mode: params.execution.mode,
+            platform: params.execution.platform,
           },
           output: { include_comment_draft: true, publish_comment: false },
         });
@@ -4722,6 +4736,48 @@ export function registerTools(
         );
 
         return result(lines.join("\n"));
+      } catch (e) {
+        const fmt = formatApiFailure(e);
+        if (fmt) return fmt;
+        throw e;
+      }
+    },
+  );
+
+  registerTracedTool(
+    "testneo_developer_release_workflow",
+    {
+      description:
+        "IDE-agnostic end-to-end developer release workflow — works in Cursor, Claude Code, VS Code, Windsurf, or any MCP client. " +
+        "Orchestrates: optional Jira/CSV Engineering Memory ingest → optional auto-generate tests for unmapped diff functions → " +
+        "full PR validation (impact, execute, risk PASS/WARN/BLOCK) → optional Release Bundle + gate evaluation. " +
+        "Single call replaces 3–5 separate MCP tools. Planning + risk scoring always run; set confirm=true + TESTNEO_MCP_ALLOW_WRITE=true to execute tests. " +
+        "Pass execution.mode/platform for cloud (e.g. saucelabs) or local agent routing.",
+      inputSchema: DeveloperReleaseWorkflowInputSchema,
+    },
+    async (params) => {
+      try {
+        const resolvedMode =
+          params.execution?.mode ?? batchExecutionDefaults.defaultExecutionMode;
+        const resolvedPlatform =
+          params.execution?.platform ?? batchExecutionDefaults.defaultExecutionPlatform;
+        return await runDeveloperReleaseWorkflow(params, {
+          client,
+          store: workflowStore,
+          impactAnalyzer,
+          testExecutor: testExecutionAdapter,
+          incidentContextAdapter,
+          allowWriteTools: deps.allowWriteTools,
+          executionRouting: {
+            resolved_mode: resolvedMode,
+            resolved_platform: resolvedPlatform,
+            use_local_agent: shouldPostUseAgentToExecuteApi(),
+            write_tools_enabled: deps.allowWriteTools,
+            confirm_requested: params.confirm === true,
+          },
+          asText,
+          result,
+        });
       } catch (e) {
         const fmt = formatApiFailure(e);
         if (fmt) return fmt;

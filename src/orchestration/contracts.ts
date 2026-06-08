@@ -321,6 +321,17 @@ export const ValidatePrRequestSchema = z.object({
       run_lighthouse: z.boolean().default(true),
       capture_replay: z.boolean().default(true),
       max_parallelism: z.number().int().min(1).max(8).default(4),
+      mode: z
+        .enum(["local", "cloud"])
+        .optional()
+        .describe("Execution mode override. Falls back to TESTNEO_MCP_DEFAULT_EXECUTION_MODE."),
+      platform: z
+        .string()
+        .optional()
+        .describe(
+          "Cloud/local platform override (e.g. saucelabs, browserstack, local). " +
+            "Falls back to TESTNEO_MCP_DEFAULT_EXECUTION_PLATFORM.",
+        ),
     })
     .default({}),
   output: z
