@@ -1,0 +1,52 @@
+import { z } from "zod";
+import type { HttpClient } from "./httpClient.js";
+import type { ToolTextResult } from "./types.js";
+export declare const CODE_GENERATE_CONTRACT: "code_generate.v1";
+export declare const GenerateTestsFromCodeInputSchema: z.ZodObject<{
+    project_id: z.ZodNumber;
+    scope: z.ZodDefault<z.ZodEnum<["function", "file", "folder", "codebase"]>>;
+    file_path: z.ZodOptional<z.ZodString>;
+    function_name: z.ZodOptional<z.ZodString>;
+    folder_path: z.ZodOptional<z.ZodString>;
+    workspace_root: z.ZodOptional<z.ZodString>;
+    include_function_bodies: z.ZodDefault<z.ZodBoolean>;
+    only_unmapped: z.ZodDefault<z.ZodBoolean>;
+    max_tests: z.ZodDefault<z.ZodNumber>;
+    generate_engine: z.ZodDefault<z.ZodEnum<["heuristic", "langgraph"]>>;
+    list_only: z.ZodDefault<z.ZodBoolean>;
+    confirm: z.ZodDefault<z.ZodBoolean>;
+}, "strip", z.ZodTypeAny, {
+    project_id: number;
+    confirm: boolean;
+    generate_engine: "heuristic" | "langgraph";
+    scope: "function" | "codebase" | "file" | "folder";
+    include_function_bodies: boolean;
+    only_unmapped: boolean;
+    max_tests: number;
+    list_only: boolean;
+    workspace_root?: string | undefined;
+    function_name?: string | undefined;
+    file_path?: string | undefined;
+    folder_path?: string | undefined;
+}, {
+    project_id: number;
+    workspace_root?: string | undefined;
+    confirm?: boolean | undefined;
+    function_name?: string | undefined;
+    file_path?: string | undefined;
+    generate_engine?: "heuristic" | "langgraph" | undefined;
+    scope?: "function" | "codebase" | "file" | "folder" | undefined;
+    folder_path?: string | undefined;
+    include_function_bodies?: boolean | undefined;
+    only_unmapped?: boolean | undefined;
+    max_tests?: number | undefined;
+    list_only?: boolean | undefined;
+}>;
+export type GenerateTestsFromCodeInput = z.infer<typeof GenerateTestsFromCodeInputSchema>;
+export declare function wrapCodeGenerate(payload: Record<string, unknown>): Record<string, unknown>;
+export declare function generateTestsFromCode(params: GenerateTestsFromCodeInput, deps: {
+    client: HttpClient;
+    allowWriteTools: boolean;
+    asText: (value: unknown) => string;
+    result: (text: string) => ToolTextResult;
+}): Promise<ToolTextResult>;

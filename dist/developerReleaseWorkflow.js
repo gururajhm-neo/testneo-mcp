@@ -6,6 +6,7 @@ const zod_1 = require("zod");
 const index_js_1 = require("./orchestration/index.js");
 const engineeringMemoryCsv_js_1 = require("./engineeringMemoryCsv.js");
 const engineeringMemoryJira_js_1 = require("./engineeringMemoryJira.js");
+const codeStructureSync_js_1 = require("./codeStructureSync.js");
 exports.DeveloperReleaseWorkflowInputSchema = zod_1.z.object({
     project_id: zod_1.z.number().int().positive(),
     repository: zod_1.z.object({
@@ -45,7 +46,22 @@ exports.DeveloperReleaseWorkflowInputSchema = zod_1.z.object({
         .boolean()
         .default(false)
         .describe("When true and diff_content is provided, auto-generate tests for uncovered changed functions before validation."),
+    generate_engine: zod_1.z
+        .enum(["heuristic", "langgraph"])
+        .default("heuristic")
+        .optional()
+        .describe("Test generation engine for unmapped diff functions. langgraph uses AI (requires GROQ on API)."),
     generate_max_tests: zod_1.z.number().int().min(1).max(20).default(5).optional(),
+    auto_sync_structure: zod_1.z
+        .boolean()
+        .default(false)
+        .describe("When true, upload code structure from workspace_root before validate (requires confirm + write)."),
+    workspace_root: zod_1.z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Repo root for auto_sync_structure (defaults to process.cwd())."),
+    include_paths: zod_1.z.array(zod_1.z.string().min(1)).optional(),
     auto_release_bundle: zod_1.z
         .boolean()
         .default(false)
@@ -300,6 +316,45 @@ async function runDeveloperReleaseWorkflow(params, deps) {
         lines.push("## 📥 Engineering Memory (CSV ingested)");
         lines.push(`File \`${csv.filename}\` — created ${csv.created ?? 0}, updated ${csv.updated ?? 0}.`);
         lines.push("");
+    }
+    // Step 0c: Optional code structure sync
+    if (params.auto_sync_structure) {
+        const syncRoot = params.workspace_root?.trim() || process.cwd();
+        try {
+            const syncResult = await (0, codeStructureSync_js_1.syncCodeStructure)({
+                project_id: params.project_id,
+                workspace_root: syncRoot,
+                include_paths: params.include_paths,
+                confirm: params.confirm,
+                auto_detect: true,
+                max_size_mb: 50,
+                wait_timeout_seconds: 120,
+            }, { client, allowWriteTools, asText, result });
+            const syncText = syncResult.content?.[0]?.text ?? "";
+            let syncJson = {};
+            try {
+                syncJson = JSON.parse(syncText);
+            }
+            catch {
+                /* markdown fallback */
+            }
+            if (syncJson.success) {
+                lines.push("## 📂 Code structure synced");
+                lines.push(`Structure ID **${syncJson.structure_id}** · task \`${syncJson.task_id}\``);
+                lines.push("");
+            }
+            else if (!syncJson.dry_run) {
+                lines.push("## 📂 Code structure sync (failed — continuing)");
+                lines.push(`_${String(syncJson.error ?? syncText).slice(0, 200)}_`);
+                lines.push("");
+            }
+        }
+        catch (syncErr) {
+            const msg = syncErr instanceof Error ? syncErr.message : String(syncErr);
+            lines.push("## 📂 Code structure sync (failed — continuing)");
+            lines.push(`_${msg.slice(0, 200)}_`);
+            lines.push("");
+        }
     }
     // Step 1: Optional generate for unmapped functions
     let generateSummary = { generated_count: 0, test_case_ids: [] };

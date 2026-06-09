@@ -75,6 +75,14 @@ import {
   wrapSwaggerIntel,
 } from "../swaggerIntel.js";
 import {
+  CodeStructureSyncInputSchema,
+  syncCodeStructure,
+} from "../codeStructureSync.js";
+import {
+  GenerateTestsFromCodeInputSchema,
+  generateTestsFromCode,
+} from "../generateTestsFromCode.js";
+import {
   DeveloperReleaseWorkflowInputSchema,
   runDeveloperReleaseWorkflow,
 } from "../developerReleaseWorkflow.js";
@@ -1186,6 +1194,24 @@ export function registerTools(
       } as import("../orchestration/contracts.js").ImpactAnalysisResult & { blastTestSummary?: Record<string, number> };
     },
   };
+
+  async function mapWithConcurrency<T>(
+    items: T[],
+    limit: number,
+    mapper: (item: T) => Promise<void>,
+  ): Promise<void> {
+    const queue = items.slice();
+    const workerCount = Math.max(1, Math.min(limit, queue.length || 1));
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        while (queue.length) {
+          const item = queue.shift();
+          if (item !== undefined) await mapper(item);
+        }
+      }),
+    );
+  }
+
   const testExecutionAdapter: TestExecutionAdapter = {
     execute: async ({ request, affectedTests }) => {
       const changedFileHints = (request.git.changed_files ?? []).map((file) => file.path);
@@ -1215,7 +1241,9 @@ export function registerTools(
         request.execution?.mode ?? batchExecutionDefaults.defaultExecutionMode;
       const executionPlatform =
         request.execution?.platform ?? batchExecutionDefaults.defaultExecutionPlatform;
-      for (const candidate of uniqueCandidates.values()) {
+      const maxParallel = request.execution?.max_parallelism ?? 4;
+
+      const runCandidate = async (candidate: AffectedTestCandidate): Promise<void> => {
         let resolvedTestId =
           typeof candidate.test_id === "number" && Number.isFinite(candidate.test_id) && candidate.test_id > 0
             ? candidate.test_id
@@ -1257,7 +1285,7 @@ export function registerTools(
             confidence: candidate.confidence ?? candidate.confidence_score ?? 0.5,
           };
           findings.push(unresolvedFinding);
-          continue;
+          return;
         }
 
         let executeResponse: Record<string, unknown>;
@@ -1302,7 +1330,7 @@ export function registerTools(
               ],
               confidence: candidate.confidence ?? candidate.confidence_score ?? 0.7,
             });
-            continue;
+            return;
           }
           throw error;
         }
@@ -1336,7 +1364,9 @@ export function registerTools(
         });
         findings.push(finding);
         artifacts.push(...finding.evidence);
-      }
+      };
+
+      await mapWithConcurrency([...uniqueCandidates.values()], maxParallel, runCandidate);
 
       const hasFailed = findings.some((finding) => finding.status === "failed");
       const hasWarnings = findings.some((finding) => finding.status === "warning");
@@ -1361,6 +1391,7 @@ export function registerTools(
           requested_candidate_count: uniqueCandidates.size,
           routing: {
             use_agent: useAgent,
+            max_parallelism: maxParallel,
           },
         },
       };
@@ -4745,6 +4776,57 @@ export function registerTools(
   );
 
   registerTracedTool(
+    "testneo_generate_tests_from_code",
+    {
+      description:
+        "Generate NLP web tests from indexed code structure — VS Code parity. " +
+        "Scopes: function (one fn), file (all fns in file), folder (prefix), codebase (capped). " +
+        "Requires structure sync first. Pass workspace_root to attach function bodies for LangGraph. " +
+        "confirm=true + TESTNEO_MCP_ALLOW_WRITE=true to create tests. list_only=true for discovery.",
+      inputSchema: GenerateTestsFromCodeInputSchema,
+    },
+    async (params) => {
+      try {
+        return await generateTestsFromCode(params, {
+          client,
+          allowWriteTools: deps.allowWriteTools,
+          asText,
+          result,
+        });
+      } catch (e) {
+        const fmt = formatApiFailure(e);
+        if (fmt) return fmt;
+        throw e;
+      }
+    },
+  );
+
+  registerTracedTool(
+    "testneo_sync_code_structure",
+    {
+      description:
+        "Upload workspace code structure to TestNeo (ZIP → async scan → structure.json + test-function mappings). " +
+        "Removes manual upload-zip step before PR validation. Requires confirm=true + TESTNEO_MCP_ALLOW_WRITE=true. " +
+        "Provide workspace_root (uses zip CLI) or zip_base64.",
+      inputSchema: CodeStructureSyncInputSchema,
+    },
+    async (params) => {
+      try {
+        return await syncCodeStructure(params, {
+          client,
+          allowWriteTools: deps.allowWriteTools,
+          asText,
+          result,
+        });
+      } catch (e) {
+        const fmt = formatApiFailure(e);
+        if (fmt) return fmt;
+        throw e;
+      }
+    },
+  );
+
+  registerTracedTool(
     "testneo_developer_release_workflow",
     {
       description:
@@ -4757,11 +4839,16 @@ export function registerTools(
     },
     async (params) => {
       try {
+        const { mergeRepoConfigIntoWorkflowParams } = await import("../repoConfig.js");
+        const mergedParams = mergeRepoConfigIntoWorkflowParams(
+          params,
+          params.workspace_root || process.cwd(),
+        );
         const resolvedMode =
-          params.execution?.mode ?? batchExecutionDefaults.defaultExecutionMode;
+          mergedParams.execution?.mode ?? batchExecutionDefaults.defaultExecutionMode;
         const resolvedPlatform =
-          params.execution?.platform ?? batchExecutionDefaults.defaultExecutionPlatform;
-        return await runDeveloperReleaseWorkflow(params, {
+          mergedParams.execution?.platform ?? batchExecutionDefaults.defaultExecutionPlatform;
+        return await runDeveloperReleaseWorkflow(mergedParams, {
           client,
           store: workflowStore,
           impactAnalyzer,
@@ -4773,7 +4860,7 @@ export function registerTools(
             resolved_platform: resolvedPlatform,
             use_local_agent: shouldPostUseAgentToExecuteApi(),
             write_tools_enabled: deps.allowWriteTools,
-            confirm_requested: params.confirm === true,
+            confirm_requested: mergedParams.confirm === true,
           },
           asText,
           result,

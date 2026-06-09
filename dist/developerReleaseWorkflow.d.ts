@@ -37,14 +37,14 @@ export declare const DeveloperReleaseWorkflowInputSchema: z.ZodObject<{
             deletions: z.ZodOptional<z.ZodNumber>;
             language: z.ZodOptional<z.ZodString>;
         }, "strip", z.ZodTypeAny, {
-            status: "added" | "modified" | "deleted" | "renamed";
+            status: "modified" | "added" | "deleted" | "renamed";
             path: string;
             additions?: number | undefined;
             deletions?: number | undefined;
             language?: string | undefined;
         }, {
             path: string;
-            status?: "added" | "modified" | "deleted" | "renamed" | undefined;
+            status?: "modified" | "added" | "deleted" | "renamed" | undefined;
             additions?: number | undefined;
             deletions?: number | undefined;
             language?: string | undefined;
@@ -53,7 +53,7 @@ export declare const DeveloperReleaseWorkflowInputSchema: z.ZodObject<{
         base_sha: string;
         head_sha: string;
         changed_files?: {
-            status: "added" | "modified" | "deleted" | "renamed";
+            status: "modified" | "added" | "deleted" | "renamed";
             path: string;
             additions?: number | undefined;
             deletions?: number | undefined;
@@ -65,7 +65,7 @@ export declare const DeveloperReleaseWorkflowInputSchema: z.ZodObject<{
         head_sha: string;
         changed_files?: {
             path: string;
-            status?: "added" | "modified" | "deleted" | "renamed" | undefined;
+            status?: "modified" | "added" | "deleted" | "renamed" | undefined;
             additions?: number | undefined;
             deletions?: number | undefined;
             language?: string | undefined;
@@ -87,7 +87,11 @@ export declare const DeveloperReleaseWorkflowInputSchema: z.ZodObject<{
     }>>;
     confirm: z.ZodDefault<z.ZodBoolean>;
     generate_if_unmapped: z.ZodDefault<z.ZodBoolean>;
+    generate_engine: z.ZodOptional<z.ZodDefault<z.ZodEnum<["heuristic", "langgraph"]>>>;
     generate_max_tests: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+    auto_sync_structure: z.ZodDefault<z.ZodBoolean>;
+    workspace_root: z.ZodOptional<z.ZodString>;
+    include_paths: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
     auto_release_bundle: z.ZodDefault<z.ZodBoolean>;
     release_name: z.ZodOptional<z.ZodString>;
     target_env: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -101,11 +105,12 @@ export declare const DeveloperReleaseWorkflowInputSchema: z.ZodObject<{
     jira_sync_lookback_days: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
     idempotency_key: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
+    project_id: number;
+    confirm: boolean;
     repository: {
         name: string;
         owner: string;
     };
-    project_id: number;
     pull_request: {
         number: number;
         url?: string | undefined;
@@ -114,7 +119,7 @@ export declare const DeveloperReleaseWorkflowInputSchema: z.ZodObject<{
         base_sha: string;
         head_sha: string;
         changed_files?: {
-            status: "added" | "modified" | "deleted" | "renamed";
+            status: "modified" | "added" | "deleted" | "renamed";
             path: string;
             additions?: number | undefined;
             deletions?: number | undefined;
@@ -127,10 +132,13 @@ export declare const DeveloperReleaseWorkflowInputSchema: z.ZodObject<{
         mode?: "local" | "cloud" | undefined;
         platform?: string | undefined;
     };
-    confirm: boolean;
     generate_if_unmapped: boolean;
+    auto_sync_structure: boolean;
     auto_release_bundle: boolean;
+    workspace_root?: string | undefined;
+    include_paths?: string[] | undefined;
     idempotency_key?: string | undefined;
+    generate_engine?: "heuristic" | "langgraph" | undefined;
     generate_max_tests?: number | undefined;
     release_name?: string | undefined;
     target_env?: string | undefined;
@@ -143,11 +151,11 @@ export declare const DeveloperReleaseWorkflowInputSchema: z.ZodObject<{
     jira_sync_max_issues?: number | undefined;
     jira_sync_lookback_days?: number | undefined;
 }, {
+    project_id: number;
     repository: {
         name: string;
         owner: string;
     };
-    project_id: number;
     pull_request: {
         number: number;
         url?: string | undefined;
@@ -157,22 +165,26 @@ export declare const DeveloperReleaseWorkflowInputSchema: z.ZodObject<{
         head_sha: string;
         changed_files?: {
             path: string;
-            status?: "added" | "modified" | "deleted" | "renamed" | undefined;
+            status?: "modified" | "added" | "deleted" | "renamed" | undefined;
             additions?: number | undefined;
             deletions?: number | undefined;
             language?: string | undefined;
         }[] | undefined;
         diff_content?: string | undefined;
     };
+    workspace_root?: string | undefined;
+    include_paths?: string[] | undefined;
+    confirm?: boolean | undefined;
     execution?: {
         run_impacted_tests?: boolean | undefined;
         mode?: "local" | "cloud" | undefined;
         platform?: string | undefined;
     } | undefined;
     idempotency_key?: string | undefined;
-    confirm?: boolean | undefined;
     generate_if_unmapped?: boolean | undefined;
+    generate_engine?: "heuristic" | "langgraph" | undefined;
     generate_max_tests?: number | undefined;
+    auto_sync_structure?: boolean | undefined;
     auto_release_bundle?: boolean | undefined;
     release_name?: string | undefined;
     target_env?: string | undefined;

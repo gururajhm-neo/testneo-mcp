@@ -20,6 +20,8 @@ const engineeringMemoryConfluence_js_1 = require("../engineeringMemoryConfluence
 const engineeringMemoryJira_js_1 = require("../engineeringMemoryJira.js");
 const executionUiLinks_js_1 = require("../executionUiLinks.js");
 const swaggerIntel_js_1 = require("../swaggerIntel.js");
+const codeStructureSync_js_1 = require("../codeStructureSync.js");
+const generateTestsFromCode_js_1 = require("../generateTestsFromCode.js");
 const developerReleaseWorkflow_js_1 = require("../developerReleaseWorkflow.js");
 const routeHardeningToolSchema = zod_1.z
     .object({
@@ -916,6 +918,17 @@ function registerTools(server, deps) {
             };
         },
     };
+    async function mapWithConcurrency(items, limit, mapper) {
+        const queue = items.slice();
+        const workerCount = Math.max(1, Math.min(limit, queue.length || 1));
+        await Promise.all(Array.from({ length: workerCount }, async () => {
+            while (queue.length) {
+                const item = queue.shift();
+                if (item !== undefined)
+                    await mapper(item);
+            }
+        }));
+    }
     const testExecutionAdapter = {
         execute: async ({ request, affectedTests }) => {
             const changedFileHints = (request.git.changed_files ?? []).map((file) => file.path);
@@ -941,7 +954,8 @@ function registerTools(server, deps) {
             const useAgent = shouldPostUseAgentToExecuteApi();
             const executionMode = request.execution?.mode ?? batchExecutionDefaults.defaultExecutionMode;
             const executionPlatform = request.execution?.platform ?? batchExecutionDefaults.defaultExecutionPlatform;
-            for (const candidate of uniqueCandidates.values()) {
+            const maxParallel = request.execution?.max_parallelism ?? 4;
+            const runCandidate = async (candidate) => {
                 let resolvedTestId = typeof candidate.test_id === "number" && Number.isFinite(candidate.test_id) && candidate.test_id > 0
                     ? candidate.test_id
                     : null;
@@ -980,7 +994,7 @@ function registerTools(server, deps) {
                         confidence: candidate.confidence ?? candidate.confidence_score ?? 0.5,
                     };
                     findings.push(unresolvedFinding);
-                    continue;
+                    return;
                 }
                 let executeResponse;
                 try {
@@ -1022,7 +1036,7 @@ function registerTools(server, deps) {
                             ],
                             confidence: candidate.confidence ?? candidate.confidence_score ?? 0.7,
                         });
-                        continue;
+                        return;
                     }
                     throw error;
                 }
@@ -1053,7 +1067,8 @@ function registerTools(server, deps) {
                 });
                 findings.push(finding);
                 artifacts.push(...finding.evidence);
-            }
+            };
+            await mapWithConcurrency([...uniqueCandidates.values()], maxParallel, runCandidate);
             const hasFailed = findings.some((finding) => finding.status === "failed");
             const hasWarnings = findings.some((finding) => finding.status === "warning");
             const stageStatus = hasFailed ? "failed" : hasWarnings ? "partial" : "passed";
@@ -1076,6 +1091,7 @@ function registerTools(server, deps) {
                     requested_candidate_count: uniqueCandidates.size,
                     routing: {
                         use_agent: useAgent,
+                        max_parallelism: maxParallel,
                     },
                 },
             };
@@ -3795,6 +3811,49 @@ function registerTools(server, deps) {
             throw e;
         }
     });
+    registerTracedTool("testneo_generate_tests_from_code", {
+        description: "Generate NLP web tests from indexed code structure — VS Code parity. " +
+            "Scopes: function (one fn), file (all fns in file), folder (prefix), codebase (capped). " +
+            "Requires structure sync first. Pass workspace_root to attach function bodies for LangGraph. " +
+            "confirm=true + TESTNEO_MCP_ALLOW_WRITE=true to create tests. list_only=true for discovery.",
+        inputSchema: generateTestsFromCode_js_1.GenerateTestsFromCodeInputSchema,
+    }, async (params) => {
+        try {
+            return await (0, generateTestsFromCode_js_1.generateTestsFromCode)(params, {
+                client,
+                allowWriteTools: deps.allowWriteTools,
+                asText,
+                result,
+            });
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
+    registerTracedTool("testneo_sync_code_structure", {
+        description: "Upload workspace code structure to TestNeo (ZIP → async scan → structure.json + test-function mappings). " +
+            "Removes manual upload-zip step before PR validation. Requires confirm=true + TESTNEO_MCP_ALLOW_WRITE=true. " +
+            "Provide workspace_root (uses zip CLI) or zip_base64.",
+        inputSchema: codeStructureSync_js_1.CodeStructureSyncInputSchema,
+    }, async (params) => {
+        try {
+            return await (0, codeStructureSync_js_1.syncCodeStructure)(params, {
+                client,
+                allowWriteTools: deps.allowWriteTools,
+                asText,
+                result,
+            });
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
     registerTracedTool("testneo_developer_release_workflow", {
         description: "IDE-agnostic end-to-end developer release workflow — works in Cursor, Claude Code, VS Code, Windsurf, or any MCP client. " +
             "Orchestrates: optional Jira/CSV Engineering Memory ingest → optional auto-generate tests for unmapped diff functions → " +
@@ -3804,9 +3863,11 @@ function registerTools(server, deps) {
         inputSchema: developerReleaseWorkflow_js_1.DeveloperReleaseWorkflowInputSchema,
     }, async (params) => {
         try {
-            const resolvedMode = params.execution?.mode ?? batchExecutionDefaults.defaultExecutionMode;
-            const resolvedPlatform = params.execution?.platform ?? batchExecutionDefaults.defaultExecutionPlatform;
-            return await (0, developerReleaseWorkflow_js_1.runDeveloperReleaseWorkflow)(params, {
+            const { mergeRepoConfigIntoWorkflowParams } = await import("../repoConfig.js");
+            const mergedParams = mergeRepoConfigIntoWorkflowParams(params, params.workspace_root || process.cwd());
+            const resolvedMode = mergedParams.execution?.mode ?? batchExecutionDefaults.defaultExecutionMode;
+            const resolvedPlatform = mergedParams.execution?.platform ?? batchExecutionDefaults.defaultExecutionPlatform;
+            return await (0, developerReleaseWorkflow_js_1.runDeveloperReleaseWorkflow)(mergedParams, {
                 client,
                 store: workflowStore,
                 impactAnalyzer,
@@ -3818,7 +3879,7 @@ function registerTools(server, deps) {
                     resolved_platform: resolvedPlatform,
                     use_local_agent: shouldPostUseAgentToExecuteApi(),
                     write_tools_enabled: deps.allowWriteTools,
-                    confirm_requested: params.confirm === true,
+                    confirm_requested: mergedParams.confirm === true,
                 },
                 asText,
                 result,

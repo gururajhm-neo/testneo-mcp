@@ -1,6 +1,6 @@
 {
   "name": "@testneo/mcp-server",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "Model Context Protocol server for TestNeo quality workflows",
   "license": "GPL-3.0",
   "repository": {
@@ -36,7 +36,8 @@
     "smoke": "node dist/smoke.js",
     "smoke:validate-pr:mock": "npm run build && node dist/validatePrMockSmoke.js",
     "smoke:validate-pr:live": "npm run build && node dist/validatePrLiveSmoke.js",
-    "smoke:engineering-memory-csv": "npm run build && node dist/engineeringMemoryCsvSmoke.js"
+    "smoke:engineering-memory-csv": "npm run build && node dist/engineeringMemoryCsvSmoke.js",
+    "smoke:developer-release-workflow": "npm run build && TESTNEO_REPO_ROOT=../../ node dist/developerReleaseWorkflowSmoke.js"
   },
   "engines": {
     "node": ">=20"
