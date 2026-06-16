@@ -2372,6 +2372,40 @@ export function registerTools(
   );
 
   registerTracedTool(
+    "testneo_semantic_assert",
+    {
+      description:
+        "Semantic assertion for AI/LLM outputs — pass when actual text means the same thing as expected_meaning " +
+        "(cosine similarity on embeddings), not exact wording. Use after agent/chat steps or for inline agent gate checks. " +
+        "Optional Engineering Memory grounding via ground_truth_entry_id or ground_truth_title + project_id. Read-only.",
+      inputSchema: z.object({
+        actual: z.string().min(1).max(20000),
+        expected_meaning: z.string().min(1).max(2000),
+        threshold: z.number().min(0.5).max(0.99).optional(),
+        project_id: z.number().int().positive().optional(),
+        ground_truth_entry_id: z.string().optional(),
+        ground_truth_title: z.string().optional(),
+      }),
+    },
+    async (params) => {
+      try {
+        const resp = await client.request<Record<string, unknown>>(
+          "/api/web/v1/semantic-assert",
+          { method: "POST", body: params },
+        );
+        return result(asText({
+          contract_version: "semantic_assert.v1",
+          ...resp,
+        }));
+      } catch (e) {
+        const fmt = formatApiFailure(e);
+        if (fmt) return fmt;
+        throw e;
+      }
+    }
+  );
+
+  registerTracedTool(
     "testneo_validate_pr",
     {
       description:
