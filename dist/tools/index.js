@@ -1905,6 +1905,33 @@ function registerTools(server, deps) {
         }
         return result(`Connection valid.\n${asText(response)}`);
     });
+    registerTracedTool("testneo_semantic_assert", {
+        description: "Semantic assertion for AI/LLM outputs — pass when actual text means the same thing as expected_meaning " +
+            "(cosine similarity on embeddings), not exact wording. Use after agent/chat steps or for inline agent gate checks. " +
+            "Optional Engineering Memory grounding via ground_truth_entry_id or ground_truth_title + project_id. Read-only.",
+        inputSchema: zod_1.z.object({
+            actual: zod_1.z.string().min(1).max(20000),
+            expected_meaning: zod_1.z.string().min(1).max(2000),
+            threshold: zod_1.z.number().min(0.5).max(0.99).optional(),
+            project_id: zod_1.z.number().int().positive().optional(),
+            ground_truth_entry_id: zod_1.z.string().optional(),
+            ground_truth_title: zod_1.z.string().optional(),
+        }),
+    }, async (params) => {
+        try {
+            const resp = await client.request("/api/web/v1/semantic-assert", { method: "POST", body: params });
+            return result(asText({
+                contract_version: "semantic_assert.v1",
+                ...resp,
+            }));
+        }
+        catch (e) {
+            const fmt = formatApiFailure(e);
+            if (fmt)
+                return fmt;
+            throw e;
+        }
+    });
     registerTracedTool("testneo_validate_pr", {
         description: "Run TestNeo PR validation planning from diff or git refs. Returns shared workflow context, impacted tests, planned verification stages, and Claude-ready findings using the new orchestration contracts.",
         inputSchema: index_js_1.ValidatePrRequestSchema,

@@ -1,6 +1,6 @@
 # TestNeo MCP Tool Reference
 
-**Canonical document** (for **testneo.ai** / marketing / git): **`docs/mcp/mcp-tool-reference.md`** in the TestNeo API monorepo. The MCP server in **`packages/testneo-mcp-server`** exposes **68** tools, all prefixed with `testneo_`. The **`@testneo/mcp-server`** npm package ships the **same** Markdown as **`packages/testneo-mcp-server/docs/MCP_TOOL_REFERENCE.md`** — copy from this file before publish (see **Website and npm package sync** at the end of this page).
+**Canonical document** (for **testneo.ai** / marketing / git): **`docs/mcp/mcp-tool-reference.md`** in the TestNeo API monorepo. The MCP server in **`packages/testneo-mcp-server`** exposes **69** tools, all prefixed with `testneo_`. The **`@testneo/mcp-server`** npm package ships the **same** Markdown as **`packages/testneo-mcp-server/docs/MCP_TOOL_REFERENCE.md`** — copy from this file before publish (see **Website and npm package sync** at the end of this page).
 
 **Agent workflows:** `qa_intelligence_workflow`, `triage_failure_workflow`, and `rerun_decision_workflow` are **not** separate tool names. They are values of **`workflow_type`** on **`testneo_run_agent_workflow`** (see [Agent workflow tool](#agent-workflow-tool-testneo_run_agent_workflow)).
 
@@ -260,6 +260,7 @@ If BLOCK:
 - `testneo_get_execution_summary`
 - `testneo_get_execution_logs`
 - `testneo_search_failures`
+- `testneo_semantic_assert` — **AI Agent Verification** — semantic assertion for AI/LLM outputs (`POST /api/web/v1/semantic-assert`); pass when `actual` text **means** the same as `expected_meaning` (cosine similarity on embeddings, default threshold 0.75), not exact wording. Optional Engineering Memory grounding via `ground_truth_entry_id` or `ground_truth_title` + `project_id`. Read-only; returns `contract_version: semantic_assert.v1`. NLP steps: `Verify response means "…"` (web) · `Verify response.<field> semantically matches "…"` (API). Guide: [AI Agent Verification customer guide](../product/AI_AGENT_VERIFICATION_CUSTOMER_GUIDE.md).
 - `testneo_get_pass_fail_trend`
 - `testneo_watch_execution`
 - `testneo_get_failure_bundle`
