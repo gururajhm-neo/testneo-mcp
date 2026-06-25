@@ -211,7 +211,24 @@ function normalizeImpactAnalysisPayload(payload: Record<string, unknown>): Impac
       confidence_score: typeof row.confidence_score === "number" ? row.confidence_score : undefined,
       impact_level: typeof row.impact_level === "string" ? row.impact_level : undefined,
       reason: typeof row.reason === "string" ? row.reason : undefined,
+      matched_function:
+        typeof row.matched_function === "string" ? row.matched_function : undefined,
     }));
+
+  const changedFunctionsRaw = payload.changed_functions;
+  const changedFunctions =
+    changedFunctionsRaw &&
+    typeof changedFunctionsRaw === "object" &&
+    !Array.isArray(changedFunctionsRaw)
+      ? Object.fromEntries(
+          Object.entries(changedFunctionsRaw as Record<string, unknown>).map(([path, fns]) => [
+            path,
+            Array.isArray(fns)
+              ? fns.filter((fn): fn is string => typeof fn === "string")
+              : [],
+          ]),
+        )
+      : undefined;
 
   const recommendationsRaw = payload.recommendations;
   let recommendations: ImpactAnalysisResult["recommendations"];
@@ -230,6 +247,7 @@ function normalizeImpactAnalysisPayload(payload: Record<string, unknown>): Impac
         ? (payload.summary as Record<string, unknown>)
         : undefined,
     recommendations,
+    changedFunctions,
     source: "none",
   };
 }

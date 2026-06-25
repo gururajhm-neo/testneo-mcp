@@ -184,6 +184,7 @@ export const AffectedTestCandidateSchema = z.object({
   confidence_score: z.number().min(0).max(1).optional(),
   impact_level: z.string().optional(),
   reason: z.string().optional(),
+  matched_function: z.string().optional(),
   // Historical risk signals enriched from TestRiskScore (Sprint 1)
   failure_rate_7d: z.number().min(0).max(1).optional(),
   failure_rate_30d: z.number().min(0).max(1).optional(),
@@ -286,10 +287,28 @@ export const IncidentContextSchema = z.object({
 });
 export type IncidentContext = z.infer<typeof IncidentContextSchema>;
 
+export const TestGapsSchema = z.object({
+  total_changed_functions: z.number().int().min(0),
+  mapped_count: z.number().int().min(0),
+  unmapped_count: z.number().int().min(0),
+  coverage_pct: z.number().min(0).max(100),
+  unmapped_functions: z.array(
+    z.object({
+      file_path: z.string(),
+      function_name: z.string(),
+      function_key: z.string(),
+    }),
+  ),
+  has_gaps: z.boolean(),
+  generate_hint: z.string().nullish(),
+});
+export type TestGaps = z.infer<typeof TestGapsSchema>;
+
 export const ImpactAnalysisResultSchema = z.object({
   affectedTests: z.array(AffectedTestCandidateSchema),
   summary: z.record(z.unknown()).optional(),
   recommendations: z.union([z.array(z.string()), z.record(z.unknown())]).optional(),
+  changedFunctions: z.record(z.array(z.string())).optional(),
   source: z.enum(["git_refs", "manual_diff", "none"]).default("none"),
   // Sprint 2: project-level component health, fetched alongside risk signals
   componentHealth: z.array(ComponentHealthEntrySchema).optional(),
@@ -397,6 +416,8 @@ export const ValidatePrResponseSchema = z.object({
     }).optional(),
     // Engineering Memory: prior incidents, patterns, resolutions
     incident_context: IncidentContextSchema.optional(),
+    // Layer 4: changed functions without test mappings
+    test_gaps: TestGapsSchema.optional(),
   }),
   claude_analysis: ClaudeAnalysisSchema.optional(),
   comment_draft: z.string().optional(),

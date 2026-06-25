@@ -20,6 +20,7 @@ import {
 import type { WorkflowStore } from "./orchestration/store.js";
 import type { IncidentContextAdapter } from "./orchestration/incidentContextAdapter.js";
 import { syncCodeStructure } from "./codeStructureSync.js";
+import { appendLayer4Sections } from "./layer4Brief.js";
 
 export const DeveloperReleaseWorkflowInputSchema = z.object({
   project_id: z.number().int().positive(),
@@ -326,6 +327,13 @@ function appendValidationBrief(lines: string[], validation: ValidatePrResponse, 
       `${ai_ready_summary.warning_count} warnings · ${ai_ready_summary.passed_count} passed`,
   );
   lines.push("");
+
+  const layered = appendLayer4Sections(lines, {
+    riskFactors: ai_ready_summary.risk_factors,
+    testGaps: ai_ready_summary.test_gaps,
+  });
+  lines.length = 0;
+  lines.push(...layered);
 
   const blocking = findings.filter((f) => f.blocking);
   if (blocking.length > 0) {

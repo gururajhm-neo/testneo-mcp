@@ -7,6 +7,7 @@ const index_js_1 = require("./orchestration/index.js");
 const engineeringMemoryCsv_js_1 = require("./engineeringMemoryCsv.js");
 const engineeringMemoryJira_js_1 = require("./engineeringMemoryJira.js");
 const codeStructureSync_js_1 = require("./codeStructureSync.js");
+const layer4Brief_js_1 = require("./layer4Brief.js");
 exports.DeveloperReleaseWorkflowInputSchema = zod_1.z.object({
     project_id: zod_1.z.number().int().positive(),
     repository: zod_1.z.object({
@@ -222,6 +223,12 @@ function appendValidationBrief(lines, validation, prRef) {
     lines.push(`Findings: ${ai_ready_summary.blocking_count} blocking · ` +
         `${ai_ready_summary.warning_count} warnings · ${ai_ready_summary.passed_count} passed`);
     lines.push("");
+    const layered = (0, layer4Brief_js_1.appendLayer4Sections)(lines, {
+        riskFactors: ai_ready_summary.risk_factors,
+        testGaps: ai_ready_summary.test_gaps,
+    });
+    lines.length = 0;
+    lines.push(...layered);
     const blocking = findings.filter((f) => f.blocking);
     if (blocking.length > 0) {
         lines.push("### Blocking");

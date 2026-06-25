@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ValidatePrResponseSchema = exports.ValidatePrRequestSchema = exports.ImpactAnalysisResultSchema = exports.IncidentContextSchema = exports.IncidentMatchSchema = exports.DependencyBlastSchema = exports.DependencyNodeSchema = exports.ComponentHealthEntrySchema = exports.AffectedTestCandidateSchema = exports.WorkflowEventSchema = exports.WorkflowContextSchema = exports.ClaudeAnalysisSchema = exports.VerificationFindingSchema = exports.StageRunSchema = exports.ExecutionArtifactRefSchema = exports.ImpactedFlowSchema = exports.ChangedFileSchema = exports.StageRunStatusSchema = exports.StageSchema = exports.WorkflowStatusSchema = exports.SeveritySchema = void 0;
+exports.ValidatePrResponseSchema = exports.ValidatePrRequestSchema = exports.ImpactAnalysisResultSchema = exports.TestGapsSchema = exports.IncidentContextSchema = exports.IncidentMatchSchema = exports.DependencyBlastSchema = exports.DependencyNodeSchema = exports.ComponentHealthEntrySchema = exports.AffectedTestCandidateSchema = exports.WorkflowEventSchema = exports.WorkflowContextSchema = exports.ClaudeAnalysisSchema = exports.VerificationFindingSchema = exports.StageRunSchema = exports.ExecutionArtifactRefSchema = exports.ImpactedFlowSchema = exports.ChangedFileSchema = exports.StageRunStatusSchema = exports.StageSchema = exports.WorkflowStatusSchema = exports.SeveritySchema = void 0;
 const zod_1 = require("zod");
 exports.SeveritySchema = zod_1.z.enum(["critical", "high", "medium", "low", "info"]);
 exports.WorkflowStatusSchema = zod_1.z.enum([
@@ -156,6 +156,7 @@ exports.AffectedTestCandidateSchema = zod_1.z.object({
     confidence_score: zod_1.z.number().min(0).max(1).optional(),
     impact_level: zod_1.z.string().optional(),
     reason: zod_1.z.string().optional(),
+    matched_function: zod_1.z.string().optional(),
     // Historical risk signals enriched from TestRiskScore (Sprint 1)
     failure_rate_7d: zod_1.z.number().min(0).max(1).optional(),
     failure_rate_30d: zod_1.z.number().min(0).max(1).optional(),
@@ -245,10 +246,24 @@ exports.IncidentContextSchema = zod_1.z.object({
         .optional(),
     insight: zod_1.z.string(),
 });
+exports.TestGapsSchema = zod_1.z.object({
+    total_changed_functions: zod_1.z.number().int().min(0),
+    mapped_count: zod_1.z.number().int().min(0),
+    unmapped_count: zod_1.z.number().int().min(0),
+    coverage_pct: zod_1.z.number().min(0).max(100),
+    unmapped_functions: zod_1.z.array(zod_1.z.object({
+        file_path: zod_1.z.string(),
+        function_name: zod_1.z.string(),
+        function_key: zod_1.z.string(),
+    })),
+    has_gaps: zod_1.z.boolean(),
+    generate_hint: zod_1.z.string().nullish(),
+});
 exports.ImpactAnalysisResultSchema = zod_1.z.object({
     affectedTests: zod_1.z.array(exports.AffectedTestCandidateSchema),
     summary: zod_1.z.record(zod_1.z.unknown()).optional(),
     recommendations: zod_1.z.union([zod_1.z.array(zod_1.z.string()), zod_1.z.record(zod_1.z.unknown())]).optional(),
+    changedFunctions: zod_1.z.record(zod_1.z.array(zod_1.z.string())).optional(),
     source: zod_1.z.enum(["git_refs", "manual_diff", "none"]).default("none"),
     // Sprint 2: project-level component health, fetched alongside risk signals
     componentHealth: zod_1.z.array(exports.ComponentHealthEntrySchema).optional(),
@@ -350,6 +365,8 @@ exports.ValidatePrResponseSchema = zod_1.z.object({
         }).optional(),
         // Engineering Memory: prior incidents, patterns, resolutions
         incident_context: exports.IncidentContextSchema.optional(),
+        // Layer 4: changed functions without test mappings
+        test_gaps: exports.TestGapsSchema.optional(),
     }),
     claude_analysis: exports.ClaudeAnalysisSchema.optional(),
     comment_draft: zod_1.z.string().optional(),

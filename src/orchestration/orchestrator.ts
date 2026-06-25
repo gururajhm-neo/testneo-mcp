@@ -19,6 +19,7 @@ import {
 } from "./contracts.js";
 import { type WorkflowStore } from "./store.js";
 import { computeRiskScore, severityFromRiskLevel, type RiskScoreResult } from "./riskScorer.js";
+import { appendLayer4Sections, computeTestGaps } from "../layer4Brief.js";
 
 const SEVERITY_ORDER: Record<Severity, number> = {
   critical: 5,
@@ -108,6 +109,11 @@ export class PrValidationOrchestrator {
     context.metadata.impact_source = impact.source;
     context.metadata.impact_summary = impact.summary ?? null;
     context.metadata.impact_recommendations = impact.recommendations ?? null;
+    const testGaps = computeTestGaps({
+      changedFunctions: impact.changedFunctions,
+      affectedTests: impact.affectedTests,
+    });
+    (context.metadata as Record<string, unknown>).test_gaps = testGaps;
     context.changes.impactedFlows = this.inferImpactedFlows(impact.affectedTests);
     const stagePlan = this.buildStagePlan(request, impact.affectedTests.length, context.changes.impactedFlows.length);
     context.runs = stagePlan.runs;
@@ -678,6 +684,8 @@ export class PrValidationOrchestrator {
         blast_test_summary: (context.metadata as Record<string, unknown>).blast_test_summary as { total_blast_tests: number; tests_from_changed_files: number; tests_from_transitive: number } | undefined,
         incident_context: opts.incidentContext ??
           ((context.metadata as Record<string, unknown>).incident_context as IncidentContext | undefined),
+        test_gaps: (context.metadata as Record<string, unknown>).test_gaps as
+          import("./contracts.js").TestGaps | undefined,
       },
       claude_analysis: context.ai,
       comment_draft: includeCommentDraft ? this.buildCommentDraft(context, status, riskResult) : undefined,
@@ -773,23 +781,24 @@ export class PrValidationOrchestrator {
     lines.push(context.ai?.summary || riskResult.summary);
     lines.push("");
 
-    // Evidence
+    const storedTestGaps = (context.metadata as Record<string, unknown>).test_gaps as
+      import("./contracts.js").TestGaps | undefined;
+    const layered = appendLayer4Sections(lines, {
+      riskFactors: riskResult.risk_factors,
+      testGaps: storedTestGaps,
+    });
+    lines.length = 0;
+    lines.push(...layered);
+
     const testRun = context.runs.tests;
     if (testRun) {
-      lines.push("### Evidence");
+      lines.push("### Execution evidence");
       const passed = passedFindings.length;
       const failed = blockingFindings.length;
       const warned = warningFindings.length;
       lines.push(`${passed} passed · ${failed} failed · ${warned} warnings`);
       if (testRun.dashboardUrl) {
         lines.push(`[View execution dashboard](${testRun.dashboardUrl})`);
-      }
-      lines.push("");
-    } else if (riskResult.risk_factors.length > 0) {
-      lines.push("### Evidence");
-      for (const factor of riskResult.risk_factors) {
-        const factorLabel = factor.factor.replace(/_/g, " ");
-        lines.push(`- **${factorLabel}**: ${factor.explanation} _(${factor.score}/100)_`);
       }
       lines.push("");
     }

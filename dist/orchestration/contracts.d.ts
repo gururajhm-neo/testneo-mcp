@@ -1266,6 +1266,7 @@ export declare const AffectedTestCandidateSchema: z.ZodObject<{
     confidence_score: z.ZodOptional<z.ZodNumber>;
     impact_level: z.ZodOptional<z.ZodString>;
     reason: z.ZodOptional<z.ZodString>;
+    matched_function: z.ZodOptional<z.ZodString>;
     failure_rate_7d: z.ZodOptional<z.ZodNumber>;
     failure_rate_30d: z.ZodOptional<z.ZodNumber>;
     flakiness_score: z.ZodOptional<z.ZodNumber>;
@@ -1283,6 +1284,7 @@ export declare const AffectedTestCandidateSchema: z.ZodObject<{
     function_name?: string | undefined;
     confidence_score?: number | undefined;
     impact_level?: string | undefined;
+    matched_function?: string | undefined;
     failure_rate_7d?: number | undefined;
     failure_rate_30d?: number | undefined;
     flakiness_score?: number | undefined;
@@ -1300,6 +1302,7 @@ export declare const AffectedTestCandidateSchema: z.ZodObject<{
     function_name?: string | undefined;
     confidence_score?: number | undefined;
     impact_level?: string | undefined;
+    matched_function?: string | undefined;
     failure_rate_7d?: number | undefined;
     failure_rate_30d?: number | undefined;
     flakiness_score?: number | undefined;
@@ -1670,6 +1673,52 @@ export declare const IncidentContextSchema: z.ZodObject<{
     } | undefined;
 }>;
 export type IncidentContext = z.infer<typeof IncidentContextSchema>;
+export declare const TestGapsSchema: z.ZodObject<{
+    total_changed_functions: z.ZodNumber;
+    mapped_count: z.ZodNumber;
+    unmapped_count: z.ZodNumber;
+    coverage_pct: z.ZodNumber;
+    unmapped_functions: z.ZodArray<z.ZodObject<{
+        file_path: z.ZodString;
+        function_name: z.ZodString;
+        function_key: z.ZodString;
+    }, "strip", z.ZodTypeAny, {
+        function_name: string;
+        file_path: string;
+        function_key: string;
+    }, {
+        function_name: string;
+        file_path: string;
+        function_key: string;
+    }>, "many">;
+    has_gaps: z.ZodBoolean;
+    generate_hint: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+}, "strip", z.ZodTypeAny, {
+    total_changed_functions: number;
+    mapped_count: number;
+    unmapped_count: number;
+    coverage_pct: number;
+    unmapped_functions: {
+        function_name: string;
+        file_path: string;
+        function_key: string;
+    }[];
+    has_gaps: boolean;
+    generate_hint?: string | null | undefined;
+}, {
+    total_changed_functions: number;
+    mapped_count: number;
+    unmapped_count: number;
+    coverage_pct: number;
+    unmapped_functions: {
+        function_name: string;
+        file_path: string;
+        function_key: string;
+    }[];
+    has_gaps: boolean;
+    generate_hint?: string | null | undefined;
+}>;
+export type TestGaps = z.infer<typeof TestGapsSchema>;
 export declare const ImpactAnalysisResultSchema: z.ZodObject<{
     affectedTests: z.ZodArray<z.ZodObject<{
         test_id: z.ZodOptional<z.ZodNumber>;
@@ -1679,6 +1728,7 @@ export declare const ImpactAnalysisResultSchema: z.ZodObject<{
         confidence_score: z.ZodOptional<z.ZodNumber>;
         impact_level: z.ZodOptional<z.ZodString>;
         reason: z.ZodOptional<z.ZodString>;
+        matched_function: z.ZodOptional<z.ZodString>;
         failure_rate_7d: z.ZodOptional<z.ZodNumber>;
         failure_rate_30d: z.ZodOptional<z.ZodNumber>;
         flakiness_score: z.ZodOptional<z.ZodNumber>;
@@ -1696,6 +1746,7 @@ export declare const ImpactAnalysisResultSchema: z.ZodObject<{
         function_name?: string | undefined;
         confidence_score?: number | undefined;
         impact_level?: string | undefined;
+        matched_function?: string | undefined;
         failure_rate_7d?: number | undefined;
         failure_rate_30d?: number | undefined;
         flakiness_score?: number | undefined;
@@ -1713,6 +1764,7 @@ export declare const ImpactAnalysisResultSchema: z.ZodObject<{
         function_name?: string | undefined;
         confidence_score?: number | undefined;
         impact_level?: string | undefined;
+        matched_function?: string | undefined;
         failure_rate_7d?: number | undefined;
         failure_rate_30d?: number | undefined;
         flakiness_score?: number | undefined;
@@ -1725,6 +1777,7 @@ export declare const ImpactAnalysisResultSchema: z.ZodObject<{
     }>, "many">;
     summary: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     recommendations: z.ZodOptional<z.ZodUnion<[z.ZodArray<z.ZodString, "many">, z.ZodRecord<z.ZodString, z.ZodUnknown>]>>;
+    changedFunctions: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodArray<z.ZodString, "many">>>;
     source: z.ZodDefault<z.ZodEnum<["git_refs", "manual_diff", "none"]>>;
     componentHealth: z.ZodOptional<z.ZodArray<z.ZodObject<{
         component: z.ZodString;
@@ -1828,6 +1881,7 @@ export declare const ImpactAnalysisResultSchema: z.ZodObject<{
         function_name?: string | undefined;
         confidence_score?: number | undefined;
         impact_level?: string | undefined;
+        matched_function?: string | undefined;
         failure_rate_7d?: number | undefined;
         failure_rate_30d?: number | undefined;
         flakiness_score?: number | undefined;
@@ -1840,6 +1894,7 @@ export declare const ImpactAnalysisResultSchema: z.ZodObject<{
     }[];
     summary?: Record<string, unknown> | undefined;
     recommendations?: Record<string, unknown> | string[] | undefined;
+    changedFunctions?: Record<string, string[]> | undefined;
     componentHealth?: {
         component: string;
         failure_rate_7d?: number | null | undefined;
@@ -1877,6 +1932,7 @@ export declare const ImpactAnalysisResultSchema: z.ZodObject<{
         function_name?: string | undefined;
         confidence_score?: number | undefined;
         impact_level?: string | undefined;
+        matched_function?: string | undefined;
         failure_rate_7d?: number | undefined;
         failure_rate_30d?: number | undefined;
         flakiness_score?: number | undefined;
@@ -1890,6 +1946,7 @@ export declare const ImpactAnalysisResultSchema: z.ZodObject<{
     source?: "none" | "git_refs" | "manual_diff" | undefined;
     summary?: Record<string, unknown> | undefined;
     recommendations?: Record<string, unknown> | string[] | undefined;
+    changedFunctions?: Record<string, string[]> | undefined;
     componentHealth?: {
         component: string;
         failure_rate_7d?: number | null | undefined;
@@ -2760,6 +2817,51 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
                 avg_resolve_minutes?: number | undefined;
             } | undefined;
         }>>;
+        test_gaps: z.ZodOptional<z.ZodObject<{
+            total_changed_functions: z.ZodNumber;
+            mapped_count: z.ZodNumber;
+            unmapped_count: z.ZodNumber;
+            coverage_pct: z.ZodNumber;
+            unmapped_functions: z.ZodArray<z.ZodObject<{
+                file_path: z.ZodString;
+                function_name: z.ZodString;
+                function_key: z.ZodString;
+            }, "strip", z.ZodTypeAny, {
+                function_name: string;
+                file_path: string;
+                function_key: string;
+            }, {
+                function_name: string;
+                file_path: string;
+                function_key: string;
+            }>, "many">;
+            has_gaps: z.ZodBoolean;
+            generate_hint: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+        }, "strip", z.ZodTypeAny, {
+            total_changed_functions: number;
+            mapped_count: number;
+            unmapped_count: number;
+            coverage_pct: number;
+            unmapped_functions: {
+                function_name: string;
+                file_path: string;
+                function_key: string;
+            }[];
+            has_gaps: boolean;
+            generate_hint?: string | null | undefined;
+        }, {
+            total_changed_functions: number;
+            mapped_count: number;
+            unmapped_count: number;
+            coverage_pct: number;
+            unmapped_functions: {
+                function_name: string;
+                file_path: string;
+                function_key: string;
+            }[];
+            has_gaps: boolean;
+            generate_hint?: string | null | undefined;
+        }>>;
     }, "strip", z.ZodTypeAny, {
         risk_level: "PASS" | "WARN" | "BLOCK";
         risk_score: number;
@@ -2848,6 +2950,19 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
                 avg_resolve_minutes?: number | undefined;
             } | undefined;
         } | undefined;
+        test_gaps?: {
+            total_changed_functions: number;
+            mapped_count: number;
+            unmapped_count: number;
+            coverage_pct: number;
+            unmapped_functions: {
+                function_name: string;
+                file_path: string;
+                function_key: string;
+            }[];
+            has_gaps: boolean;
+            generate_hint?: string | null | undefined;
+        } | undefined;
     }, {
         risk_level: "PASS" | "WARN" | "BLOCK";
         risk_score: number;
@@ -2935,6 +3050,19 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
                 success_rate?: number | undefined;
                 avg_resolve_minutes?: number | undefined;
             } | undefined;
+        } | undefined;
+        test_gaps?: {
+            total_changed_functions: number;
+            mapped_count: number;
+            unmapped_count: number;
+            coverage_pct: number;
+            unmapped_functions: {
+                function_name: string;
+                file_path: string;
+                function_key: string;
+            }[];
+            has_gaps: boolean;
+            generate_hint?: string | null | undefined;
         } | undefined;
     }>;
     claude_analysis: z.ZodOptional<z.ZodObject<{
@@ -3259,6 +3387,19 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
                 avg_resolve_minutes?: number | undefined;
             } | undefined;
         } | undefined;
+        test_gaps?: {
+            total_changed_functions: number;
+            mapped_count: number;
+            unmapped_count: number;
+            coverage_pct: number;
+            unmapped_functions: {
+                function_name: string;
+                file_path: string;
+                function_key: string;
+            }[];
+            has_gaps: boolean;
+            generate_hint?: string | null | undefined;
+        } | undefined;
     };
     claude_analysis?: {
         confidence: number;
@@ -3467,6 +3608,19 @@ export declare const ValidatePrResponseSchema: z.ZodObject<{
                 success_rate?: number | undefined;
                 avg_resolve_minutes?: number | undefined;
             } | undefined;
+        } | undefined;
+        test_gaps?: {
+            total_changed_functions: number;
+            mapped_count: number;
+            unmapped_count: number;
+            coverage_pct: number;
+            unmapped_functions: {
+                function_name: string;
+                file_path: string;
+                function_key: string;
+            }[];
+            has_gaps: boolean;
+            generate_hint?: string | null | undefined;
         } | undefined;
     };
     metadata?: {

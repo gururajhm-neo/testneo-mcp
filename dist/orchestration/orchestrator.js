@@ -4,6 +4,7 @@ exports.PrValidationOrchestrator = void 0;
 const node_crypto_1 = require("node:crypto");
 const contracts_js_1 = require("./contracts.js");
 const riskScorer_js_1 = require("./riskScorer.js");
+const layer4Brief_js_1 = require("../layer4Brief.js");
 const SEVERITY_ORDER = {
     critical: 5,
     high: 4,
@@ -41,6 +42,11 @@ class PrValidationOrchestrator {
         context.metadata.impact_source = impact.source;
         context.metadata.impact_summary = impact.summary ?? null;
         context.metadata.impact_recommendations = impact.recommendations ?? null;
+        const testGaps = (0, layer4Brief_js_1.computeTestGaps)({
+            changedFunctions: impact.changedFunctions,
+            affectedTests: impact.affectedTests,
+        });
+        context.metadata.test_gaps = testGaps;
         context.changes.impactedFlows = this.inferImpactedFlows(impact.affectedTests);
         const stagePlan = this.buildStagePlan(request, impact.affectedTests.length, context.changes.impactedFlows.length);
         context.runs = stagePlan.runs;
@@ -522,6 +528,7 @@ class PrValidationOrchestrator {
                 blast_test_summary: context.metadata.blast_test_summary,
                 incident_context: opts.incidentContext ??
                     context.metadata.incident_context,
+                test_gaps: context.metadata.test_gaps,
             },
             claude_analysis: context.ai,
             comment_draft: includeCommentDraft ? this.buildCommentDraft(context, status, riskResult) : undefined,
@@ -604,24 +611,22 @@ class PrValidationOrchestrator {
         lines.push("");
         lines.push(context.ai?.summary || riskResult.summary);
         lines.push("");
-        // Evidence
+        const storedTestGaps = context.metadata.test_gaps;
+        const layered = (0, layer4Brief_js_1.appendLayer4Sections)(lines, {
+            riskFactors: riskResult.risk_factors,
+            testGaps: storedTestGaps,
+        });
+        lines.length = 0;
+        lines.push(...layered);
         const testRun = context.runs.tests;
         if (testRun) {
-            lines.push("### Evidence");
+            lines.push("### Execution evidence");
             const passed = passedFindings.length;
             const failed = blockingFindings.length;
             const warned = warningFindings.length;
             lines.push(`${passed} passed · ${failed} failed · ${warned} warnings`);
             if (testRun.dashboardUrl) {
                 lines.push(`[View execution dashboard](${testRun.dashboardUrl})`);
-            }
-            lines.push("");
-        }
-        else if (riskResult.risk_factors.length > 0) {
-            lines.push("### Evidence");
-            for (const factor of riskResult.risk_factors) {
-                const factorLabel = factor.factor.replace(/_/g, " ");
-                lines.push(`- **${factorLabel}**: ${factor.explanation} _(${factor.score}/100)_`);
             }
             lines.push("");
         }
